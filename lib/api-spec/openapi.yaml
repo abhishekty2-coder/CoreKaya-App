@@ -3,13 +3,28 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CoreKaya Pilates Labs API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: workouts
+    description: Workout management
+  - name: products
+    description: Product management
+  - name: schedule
+    description: Weekly schedule management
+  - name: user
+    description: User state (favorites, wishlist, progress)
+  - name: quotes
+    description: Quote request management
+  - name: admin
+    description: Admin operations
+  - name: ai
+    description: AI Coach endpoints
+
 paths:
   /healthz:
     get:
@@ -24,6 +39,464 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /workouts:
+    get:
+      operationId: listWorkouts
+      tags: [workouts]
+      summary: List all workouts
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: difficulty
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of workouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Workout"
+    post:
+      operationId: createWorkout
+      tags: [workouts]
+      summary: Create a workout (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkoutBody"
+      responses:
+        "201":
+          description: Created workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "400":
+          description: Invalid input
+
+  /workouts/{id}:
+    get:
+      operationId: getWorkout
+      tags: [workouts]
+      summary: Get a single workout
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateWorkout
+      tags: [workouts]
+      summary: Update a workout (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkoutBody"
+      responses:
+        "200":
+          description: Updated workout
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workout"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteWorkout
+      tags: [workouts]
+      summary: Delete a workout (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /products:
+    get:
+      operationId: listProducts
+      tags: [products]
+      summary: List all products
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: featured
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      operationId: createProduct
+      tags: [products]
+      summary: Create a product (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProductBody"
+      responses:
+        "201":
+          description: Created product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+  /products/{id}:
+    get:
+      operationId: getProduct
+      tags: [products]
+      summary: Get a single product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateProduct
+      tags: [products]
+      summary: Update a product (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProductBody"
+      responses:
+        "200":
+          description: Updated product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteProduct
+      tags: [products]
+      summary: Delete a product (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /schedule/current:
+    get:
+      operationId: getCurrentSchedule
+      tags: [schedule]
+      summary: Get the current weekly schedule
+      responses:
+        "200":
+          description: Current weekly schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklySchedule"
+    put:
+      operationId: updateCurrentSchedule
+      tags: [schedule]
+      summary: Update the current weekly schedule (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleBody"
+      responses:
+        "200":
+          description: Updated schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklySchedule"
+
+  /user/favorites:
+    get:
+      operationId: getUserFavorites
+      tags: [user]
+      summary: Get user's favorite workout IDs
+      responses:
+        "200":
+          description: Favorite workout IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserFavoritesResponse"
+    post:
+      operationId: toggleFavoriteWorkout
+      tags: [user]
+      summary: Toggle a workout as favorite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToggleFavoriteBody"
+      responses:
+        "200":
+          description: Updated favorites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserFavoritesResponse"
+
+  /user/wishlist:
+    get:
+      operationId: getUserWishlist
+      tags: [user]
+      summary: Get user's product wishlist IDs
+      responses:
+        "200":
+          description: Wishlist product IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserWishlistResponse"
+    post:
+      operationId: toggleWishlistProduct
+      tags: [user]
+      summary: Toggle a product in wishlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToggleWishlistBody"
+      responses:
+        "200":
+          description: Updated wishlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserWishlistResponse"
+
+  /user/progress:
+    get:
+      operationId: getUserProgress
+      tags: [user]
+      summary: Get user's progress (streak, completed workouts)
+      responses:
+        "200":
+          description: User progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProgress"
+    post:
+      operationId: completeWorkoutProgress
+      tags: [user]
+      summary: Mark a workout as complete and update streak
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteWorkoutBody"
+      responses:
+        "200":
+          description: Updated progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProgress"
+
+  /quotes:
+    get:
+      operationId: listQuotes
+      tags: [quotes]
+      summary: List all quote requests (admin)
+      responses:
+        "200":
+          description: List of quote requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/QuoteRequest"
+    post:
+      operationId: createQuoteRequest
+      tags: [quotes]
+      summary: Submit a quote request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateQuoteBody"
+      responses:
+        "201":
+          description: Quote request submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteRequest"
+
+  /quotes/{id}:
+    patch:
+      operationId: updateQuoteStatus
+      tags: [quotes]
+      summary: Update quote status (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateQuoteStatusBody"
+      responses:
+        "200":
+          description: Updated quote
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteRequest"
+        "404":
+          description: Not found
+
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get admin dashboard stats
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  /ai/wellness-tip:
+    post:
+      operationId: getWellnessTip
+      tags: [ai]
+      summary: Get an AI wellness tip
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WellnessTipBody"
+      responses:
+        "200":
+          description: Wellness tip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiTextResponse"
+
+  /ai/ask:
+    post:
+      operationId: askAiCoach
+      tags: [ai]
+      summary: Ask the AI coach a question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AskAiBody"
+      responses:
+        "200":
+          description: AI coach answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiTextResponse"
+
+  /ai/session-plan:
+    post:
+      operationId: generateSessionPlan
+      tags: [ai]
+      summary: Generate a Pilates session plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionPlanBody"
+      responses:
+        "200":
+          description: Generated session plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiTextResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +507,494 @@ components:
       required:
         - status
 
+    Workout:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        instructor:
+          type: string
+        durationMin:
+          type: integer
+        category:
+          type: string
+        difficulty:
+          type: string
+        equipment:
+          type: array
+          items:
+            type: string
+        thumbnailUrl:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        videoUrl:
+          type: ["string", "null"]
+        isPublished:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - title
+        - instructor
+        - durationMin
+        - category
+        - difficulty
+        - equipment
+        - thumbnailUrl
+        - description
+        - tags
+        - videoUrl
+        - isPublished
+        - createdAt
+
+    CreateWorkoutBody:
+      type: object
+      properties:
+        title:
+          type: string
+        instructor:
+          type: string
+        durationMin:
+          type: integer
+        category:
+          type: string
+        difficulty:
+          type: string
+        equipment:
+          type: array
+          items:
+            type: string
+        thumbnailUrl:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        videoUrl:
+          type: ["string", "null"]
+        isPublished:
+          type: boolean
+      required:
+        - title
+        - instructor
+        - durationMin
+        - category
+        - difficulty
+        - equipment
+        - thumbnailUrl
+        - description
+        - tags
+
+    UpdateWorkoutBody:
+      type: object
+      properties:
+        title:
+          type: string
+        instructor:
+          type: string
+        durationMin:
+          type: integer
+        category:
+          type: string
+        difficulty:
+          type: string
+        equipment:
+          type: array
+          items:
+            type: string
+        thumbnailUrl:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        videoUrl:
+          type: ["string", "null"]
+        isPublished:
+          type: boolean
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+        affiliateUrl:
+          type: string
+        priceDisplay:
+          type: string
+        description:
+          type: string
+        isFeatured:
+          type: boolean
+        isPublished:
+          type: boolean
+        createdAt:
+          type: string
+      required:
+        - id
+        - name
+        - category
+        - imageUrl
+        - affiliateUrl
+        - priceDisplay
+        - description
+        - isFeatured
+        - isPublished
+        - createdAt
+
+    CreateProductBody:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+        affiliateUrl:
+          type: string
+        priceDisplay:
+          type: string
+        description:
+          type: string
+        isFeatured:
+          type: boolean
+        isPublished:
+          type: boolean
+      required:
+        - name
+        - category
+        - imageUrl
+        - affiliateUrl
+        - priceDisplay
+        - description
+
+    UpdateProductBody:
+      type: object
+      properties:
+        name:
+          type: string
+        category:
+          type: string
+        imageUrl:
+          type: string
+        affiliateUrl:
+          type: string
+        priceDisplay:
+          type: string
+        description:
+          type: string
+        isFeatured:
+          type: boolean
+        isPublished:
+          type: boolean
+
+    WeeklySchedule:
+      type: object
+      properties:
+        id:
+          type: integer
+        startDate:
+          type: string
+        mon:
+          type: ["integer", "null"]
+        tue:
+          type: ["integer", "null"]
+        wed:
+          type: ["integer", "null"]
+        thu:
+          type: ["integer", "null"]
+        fri:
+          type: ["integer", "null"]
+        sat:
+          type: ["integer", "null"]
+        sun:
+          type: ["integer", "null"]
+        monWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        tueWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        wedWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        thuWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        friWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        satWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+        sunWorkout:
+          $ref: "#/components/schemas/WorkoutOrNull"
+      required:
+        - id
+        - startDate
+        - mon
+        - tue
+        - wed
+        - thu
+        - fri
+        - sat
+        - sun
+
+    WorkoutOrNull:
+      type: ["object", "null"]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        instructor:
+          type: string
+        durationMin:
+          type: integer
+        category:
+          type: string
+        difficulty:
+          type: string
+        equipment:
+          type: array
+          items:
+            type: string
+        thumbnailUrl:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        videoUrl:
+          type: ["string", "null"]
+        isPublished:
+          type: boolean
+        createdAt:
+          type: string
+
+    UpdateScheduleBody:
+      type: object
+      properties:
+        startDate:
+          type: string
+        mon:
+          type: ["integer", "null"]
+        tue:
+          type: ["integer", "null"]
+        wed:
+          type: ["integer", "null"]
+        thu:
+          type: ["integer", "null"]
+        fri:
+          type: ["integer", "null"]
+        sat:
+          type: ["integer", "null"]
+        sun:
+          type: ["integer", "null"]
+      required:
+        - startDate
+
+    UserFavoritesResponse:
+      type: object
+      properties:
+        favorites:
+          type: array
+          items:
+            type: integer
+      required:
+        - favorites
+
+    ToggleFavoriteBody:
+      type: object
+      properties:
+        workoutId:
+          type: integer
+      required:
+        - workoutId
+
+    UserWishlistResponse:
+      type: object
+      properties:
+        wishlist:
+          type: array
+          items:
+            type: integer
+      required:
+        - wishlist
+
+    ToggleWishlistBody:
+      type: object
+      properties:
+        productId:
+          type: integer
+      required:
+        - productId
+
+    UserProgress:
+      type: object
+      properties:
+        streak:
+          type: integer
+        completedWorkouts:
+          type: array
+          items:
+            type: integer
+        lastWorkoutDate:
+          type: ["string", "null"]
+      required:
+        - streak
+        - completedWorkouts
+        - lastWorkoutDate
+
+    CompleteWorkoutBody:
+      type: object
+      properties:
+        workoutId:
+          type: integer
+      required:
+        - workoutId
+
+    QuoteRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+        customerPhone:
+          type: ["string", "null"]
+        productId:
+          type: ["integer", "null"]
+        productName:
+          type: ["string", "null"]
+        message:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+      required:
+        - id
+        - customerName
+        - customerEmail
+        - customerPhone
+        - productId
+        - productName
+        - message
+        - status
+        - createdAt
+
+    CreateQuoteBody:
+      type: object
+      properties:
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+        customerPhone:
+          type: ["string", "null"]
+        productId:
+          type: ["integer", "null"]
+        productName:
+          type: ["string", "null"]
+        message:
+          type: string
+      required:
+        - customerName
+        - customerEmail
+        - message
+
+    UpdateQuoteStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    AdminStats:
+      type: object
+      properties:
+        totalWorkouts:
+          type: integer
+        totalProducts:
+          type: integer
+        totalQuotes:
+          type: integer
+        pendingQuotes:
+          type: integer
+        publishedWorkouts:
+          type: integer
+        publishedProducts:
+          type: integer
+      required:
+        - totalWorkouts
+        - totalProducts
+        - totalQuotes
+        - pendingQuotes
+        - publishedWorkouts
+        - publishedProducts
+
+    WellnessTipBody:
+      type: object
+      properties:
+        mood:
+          type: string
+        energy:
+          type: string
+      required:
+        - mood
+        - energy
+
+    AskAiBody:
+      type: object
+      properties:
+        question:
+          type: string
+      required:
+        - question
+
+    SessionPlanBody:
+      type: object
+      properties:
+        equipment:
+          type: array
+          items:
+            type: string
+        mood:
+          type: string
+        issues:
+          type: array
+          items:
+            type: string
+        customNote:
+          type: string
+      required:
+        - equipment
+        - mood
+        - issues
+
+    AiTextResponse:
+      type: object
+      properties:
+        text:
+          type: string
+      required:
+        - text
