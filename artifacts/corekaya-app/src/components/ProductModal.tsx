@@ -1,170 +1,75 @@
-import { X, Send } from "lucide-react";
-import { Product, useCreateQuoteRequest } from "@workspace/api-client-react";
-import { useState } from "react";
-import { Button } from "./ui/Button";
-import { useToast } from "@/hooks/use-toast";
+import React from 'react';
+import { Product } from '@workspace/api-client-react';
+import { Button } from './Button';
+import { ICONS } from '../constants';
 
 interface ProductModalProps {
-  product: Product;
+  product: Product | null;
   onClose: () => void;
 }
 
-export function ProductModal({ product, onClose }: ProductModalProps) {
-  const [showQuoteForm, setShowQuoteForm] = useState(false);
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    message: `I'm interested in the ${product.name}. Please provide more information about pricing and availability.`,
-  });
+export const ProductModal: React.FC<ProductModalProps> = ({ product, onClose }) => {
+  if (!product) return null;
 
-  const { toast } = useToast();
-  const createQuote = useCreateQuoteRequest();
-
-  const handleQuoteSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    createQuote.mutate({
-      data: {
-        customerName: formData.name,
-        customerEmail: formData.email,
-        customerPhone: formData.phone || null,
-        productId: product.id,
-        productName: product.name,
-        message: formData.message,
-      }
-    }, {
-      onSuccess: () => {
-        toast({
-          title: "Quote Request Sent",
-          description: "We'll be in touch with you shortly.",
-        });
-        onClose();
-      },
-      onError: () => {
-        toast({
-          title: "Error",
-          description: "Failed to send quote request. Please try again.",
-          variant: "destructive",
-        });
-      }
-    });
+  const handleBuy = () => {
+    window.open('https://corekaya.com/', '_blank');
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div 
-        className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl relative flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-        data-testid={`product-modal-${product.id}`}
-      >
-        <button 
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 pb-36">
+      <div
+        className="absolute inset-0 bg-navy/40 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
+
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[70vh] overflow-y-auto flex flex-col animate-[fadeIn_0.2s_ease-out]">
+        <button
           onClick={onClose}
-          className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center rounded-full bg-black/10 hover:bg-black/20 text-gray-700 transition-colors z-10"
+          className="absolute top-3 right-3 z-10 w-8 h-8 flex items-center justify-center bg-white/80 rounded-full text-charcoal hover:bg-gray-100 transition-colors"
         >
-          <X size={20} />
+          ✕
         </button>
 
-        <div className="overflow-y-auto overflow-x-hidden flex-1">
-          <div className="aspect-[4/3] w-full bg-gray-50 relative">
-            <img 
-              src={product.imageUrl} 
-              alt={product.name}
-              className="w-full h-full object-cover"
-            />
-          </div>
-          
-          <div className="p-6">
-            <span className="text-xs font-bold uppercase tracking-widest text-orange mb-2 block">
+        <div className="relative aspect-square bg-gray-50 flex-shrink-0">
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute bottom-4 left-4">
+            <span className="bg-navy text-white px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-md shadow-lg">
               {product.category}
             </span>
-            <h2 className="font-serif text-2xl font-bold text-navy mb-2">
-              {product.name}
-            </h2>
-            <p className="text-xl font-medium text-gray-900 mb-6">
-              {product.priceDisplay}
-            </p>
-            
-            <div className="prose prose-sm text-gray-600 mb-8">
-              <p>{product.description}</p>
-            </div>
-
-            {showQuoteForm ? (
-              <div className="bg-gray-50 p-4 rounded-xl mb-4 border border-gray-100 animate-in slide-in-from-bottom-4">
-                <h3 className="font-medium text-navy mb-4">Request a Quote</h3>
-                <form onSubmit={handleQuoteSubmit} className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Name</label>
-                    <input 
-                      required
-                      type="text" 
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-navy"
-                      value={formData.name}
-                      onChange={e => setFormData({...formData, name: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
-                    <input 
-                      required
-                      type="email" 
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-navy"
-                      value={formData.email}
-                      onChange={e => setFormData({...formData, email: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Phone (Optional)</label>
-                    <input 
-                      type="tel" 
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-navy"
-                      value={formData.phone}
-                      onChange={e => setFormData({...formData, phone: e.target.value})}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Message</label>
-                    <textarea 
-                      required
-                      rows={3}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-1 focus:ring-navy resize-none"
-                      value={formData.message}
-                      onChange={e => setFormData({...formData, message: e.target.value})}
-                    ></textarea>
-                  </div>
-                  <div className="flex gap-2 pt-2">
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => setShowQuoteForm(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      variant="primary" 
-                      className="flex-1"
-                      isLoading={createQuote.isPending}
-                    >
-                      <Send className="w-4 h-4 mr-2" />
-                      Send
-                    </Button>
-                  </div>
-                </form>
-              </div>
-            ) : (
-              <Button 
-                variant="primary" 
-                size="lg" 
-                fullWidth 
-                onClick={() => setShowQuoteForm(true)}
-              >
-                Get Quote
-              </Button>
-            )}
           </div>
+        </div>
+
+        <div className="p-6">
+          <div className="flex justify-between items-start mb-2">
+            <h2 className="font-serif text-2xl text-navy leading-tight">{product.name}</h2>
+            <span className="text-xl font-medium text-orange ml-4 whitespace-nowrap">{product.priceDisplay}</span>
+          </div>
+
+          <div className="w-12 h-0.5 bg-gray-200 my-4" />
+
+          <p className="text-gray-600 leading-relaxed text-sm mb-8">
+            {product.description}
+          </p>
+
+          <Button
+            fullWidth
+            size="lg"
+            variant="primary"
+            onClick={handleBuy}
+            className="shadow-lg shadow-navy/20 gap-2"
+          >
+            <span>{ICONS.SHOP}</span> Buy Now
+          </Button>
+
+          <p className="text-[10px] text-center text-gray-400 mt-4">
+            You will be redirected to the CoreKaya secure checkout.
+          </p>
         </div>
       </div>
     </div>
   );
-}
+};

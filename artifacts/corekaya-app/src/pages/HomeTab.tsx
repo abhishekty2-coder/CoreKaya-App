@@ -1,18 +1,44 @@
-import { useState, useEffect } from "react";
-import { format, startOfWeek, addDays, isSameDay } from "date-fns";
-import { Calendar as CalendarIcon, Zap } from "lucide-react";
-import { 
-  useGetCurrentSchedule, 
-  useGetUserProgress, 
-  useListWorkouts, 
-  useListProducts,
-  useGetUserFavorites,
-  useGetUserWishlist,
-  Workout
-} from "@workspace/api-client-react";
-import { WorkoutCard } from "@/components/WorkoutCard";
-import { ProductCard } from "@/components/ProductCard";
-import { ProductModal } from "@/components/ProductModal";
+import React, { useState } from 'react';
+import { useGetCurrentSchedule, useListWorkouts, useListProducts, Workout, Product } from '@workspace/api-client-react';
+import { WorkoutCard } from '../components/WorkoutCard';
+import { ProductCard } from '../components/ProductCard';
+import { ProductModal } from '../components/ProductModal';
+import { Button } from '../components/Button';
+import { useUser } from '../context/UserContext';
+import { ICONS } from '../constants';
+
+const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+const CoreKayaLogo = () => (
+  <div>
+    <h1 className="font-serif text-2xl text-navy leading-none">CoreKaya</h1>
+    <p className="text-[10px] font-bold text-orange tracking-widest uppercase">Pilates Labs</p>
+  </div>
+);
+
+const CelebrationOverlay: React.FC<{ onClose: () => void }> = ({ onClose }) => {
+  const { userState } = useUser();
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 animate-[fadeIn_0.5s_ease-out]">
+      <div className="relative w-full max-w-sm p-8 text-center">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-gradient-radial from-orange/20 to-transparent rounded-full blur-3xl animate-pulse"></div>
+        <div className="relative z-10 flex flex-col items-center">
+          <div className="text-6xl mb-4 animate-[bounce_1s_infinite]">🔥</div>
+          <h2 className="font-serif text-3xl text-white mb-2 animate-[slideUp_0.5s_ease-out]">Workout Complete!</h2>
+          <p className="text-gray-300 mb-6 animate-[slideUp_0.7s_ease-out]">You're on fire! Keep the momentum going.</p>
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 w-full mb-8 border border-white/20 animate-[scaleIn_0.5s_ease-out_0.3s_both]">
+            <p className="text-xs text-orange font-bold uppercase tracking-widest mb-1">Current Streak</p>
+            <div className="flex justify-center items-baseline gap-2">
+              <span className="text-4xl font-serif text-white">{userState.streak}</span>
+              <span className="text-sm text-gray-400">days</span>
+            </div>
+          </div>
+          <Button variant="primary" size="lg" onClick={onClose} className="animate-[fadeIn_1s_ease-out_0.8s_both]">Continue</Button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface HomeTabProps {
   onPlayWorkout: (id: number) => void;
@@ -21,171 +47,121 @@ interface HomeTabProps {
 }
 
 export function HomeTab({ onPlayWorkout, showCelebration, setShowCelebration }: HomeTabProps) {
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  
+  const { userState } = useUser();
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+
   const { data: schedule } = useGetCurrentSchedule();
-  const { data: progress } = useGetUserProgress();
-  const { data: favoritesData } = useGetUserFavorites();
-  const { data: wishlistData } = useGetUserWishlist();
-  
-  // Need to fetch actual workouts/products for favorites/wishlist
   const { data: allWorkouts = [] } = useListWorkouts();
   const { data: allProducts = [] } = useListProducts();
 
-  const favoriteWorkouts = allWorkouts.filter(w => favoritesData?.favorites.includes(w.id));
-  const wishlistProducts = allProducts.filter(p => wishlistData?.wishlist.includes(p.id));
+  const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
 
-  const today = new Date();
-  const dayIndex = today.getDay(); // 0 is Sunday
-  // Mapping our API response schedule keys to JS days: API assumes Mon is 1, Sun is 7? Wait, API schema says: monWorkout, tueWorkout, etc.
-  const dayKeys: (keyof NonNullable<typeof schedule>)[] = ['sunWorkout', 'monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout'];
-  
-  const todaysWorkoutKey = dayKeys[dayIndex];
-  const todaysWorkout = schedule ? schedule[todaysWorkoutKey] : null;
+  const dayWorkoutKeys = ['monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout', 'sunWorkout'] as const;
+  const todaysWorkout = schedule ? (schedule[dayWorkoutKeys[todayIndex]] as Workout | null | undefined) : null;
 
-  // Generate week dates for the calendar strip
-  const weekStart = startOfWeek(today, { weekStartsOn: 1 }); // Monday start
-  const weekDays = Array.from({ length: 7 }).map((_, i) => addDays(weekStart, i));
+  const favoriteWorkoutsList = [...userState.favorites]
+    .reverse()
+    .map(id => allWorkouts.find(w => w.id === id))
+    .filter(Boolean) as Workout[];
 
-  // Hide celebration overlay after 3 seconds
-  useEffect(() => {
-    if (showCelebration) {
-      const timer = setTimeout(() => setShowCelebration(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [showCelebration, setShowCelebration]);
+  const wishlistProductsList = userState.wishlist
+    .map(id => allProducts.find(p => p.id === id))
+    .filter(Boolean) as Product[];
+
+  const getStartDateDisplay = () => {
+    if (!schedule?.startDate) return '';
+    return schedule.startDate;
+  };
 
   return (
-    <div className="pb-32 min-h-screen bg-sand relative">
-      {/* Celebration Overlay */}
+    <div className="min-h-screen bg-sand pb-24">
       {showCelebration && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-navy/80 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white p-8 rounded-2xl flex flex-col items-center animate-in zoom-in-95 duration-500 max-w-sm mx-4 text-center">
-            <div className="w-20 h-20 bg-orange/10 rounded-full flex items-center justify-center mb-6">
-              <Zap className="w-10 h-10 text-orange" />
-            </div>
-            <h2 className="font-serif text-3xl font-bold text-navy mb-2">Workout Complete!</h2>
-            <p className="text-gray-600 mb-6">Great job showing up for yourself today. Your streak is now {progress?.streak || 1} days.</p>
-            <button 
-              onClick={() => setShowCelebration(false)}
-              className="bg-navy text-white px-8 py-3 rounded-full font-bold w-full"
-            >
-              Keep it up
-            </button>
-          </div>
-        </div>
+        <CelebrationOverlay onClose={() => setShowCelebration(false)} />
       )}
 
-      {/* Header */}
-      <div className="pt-12 px-6 pb-6 bg-white rounded-b-3xl shadow-sm relative z-10">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="font-serif text-2xl font-bold text-navy tracking-wide">CoreKaya</h1>
-            <p className="text-xs font-bold uppercase tracking-widest text-orange">Pilates Labs</p>
-          </div>
-          <div className="flex items-center space-x-1.5 bg-orange/10 px-3 py-1.5 rounded-full">
-            <Zap size={16} className="text-orange fill-orange" />
-            <span className="text-sm font-bold text-orange">{progress?.streak || 0}</span>
-          </div>
+      <header className="px-6 pt-12 pb-4 flex justify-between items-center bg-white sticky top-0 z-40 shadow-sm">
+        <CoreKayaLogo />
+        <div className={`flex items-center gap-2 bg-sand-dark px-3 py-1.5 rounded-full transition-transform duration-500 ${showCelebration ? 'scale-110 bg-orange/20' : ''}`}>
+          <span className="text-sm">{ICONS.FIRE}</span>
+          <span className="text-sm font-bold text-navy-dark">{userState.streak} Day Streak</span>
+        </div>
+      </header>
+
+      <section className="mt-6">
+        <div className="px-6 flex justify-between items-baseline mb-4">
+          <h2 className="font-serif text-xl text-charcoal">Weekly Drop</h2>
+          <span className="text-xs text-gray-500 font-medium">Week of {getStartDateDisplay()}</span>
         </div>
 
-        <div className="mb-4">
-          <h2 className="font-serif text-xl font-bold text-navy">Weekly Drop</h2>
-          <p className="text-sm text-gray-500 font-medium">Your curated schedule</p>
-        </div>
-
-        {/* Calendar Strip */}
-        <div className="flex justify-between items-center mb-2">
-          {weekDays.map((date, i) => {
-            const isToday = isSameDay(date, today);
+        <div className="flex justify-between px-4 mb-6 overflow-x-auto no-scrollbar">
+          {DAYS.map((day, idx) => {
+            const isToday = idx === todayIndex;
+            const isDone = idx < todayIndex;
             return (
-              <div 
-                key={i} 
-                className={`flex flex-col items-center justify-center w-10 h-14 rounded-full ${
-                  isToday ? "bg-navy text-white shadow-md" : "text-gray-400"
-                }`}
-              >
-                <span className="text-[10px] font-bold uppercase mb-1">
-                  {format(date, "EEE")}
-                </span>
-                <span className={`text-sm font-bold ${isToday ? "" : "text-gray-900"}`}>
-                  {format(date, "d")}
-                </span>
+              <div key={day} className="flex flex-col items-center min-w-[48px]">
+                <span className="text-[10px] font-bold text-gray-400 mb-2">{day}</span>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all
+                  ${isToday ? 'bg-navy text-white border-navy shadow-lg scale-110' :
+                    isDone ? 'bg-navy-light/20 text-navy border-transparent' : 'bg-white border-gray-200 text-gray-400'}`}>
+                  {isDone ? '✓' : <span className="text-sm font-medium">{idx + 1}</span>}
+                </div>
               </div>
             );
           })}
         </div>
-      </div>
 
-      <div className="p-6 space-y-10">
-        {/* Today's Prescription */}
-        <section>
-          <div className="flex justify-between items-end mb-4">
-            <h3 className="font-serif text-xl font-bold text-navy">Today's Prescription</h3>
-          </div>
-          
+        <div className="px-6">
+          <div className="mb-2 text-sm font-medium text-navy-dark">TODAY'S PRESCRIPTION</div>
           {todaysWorkout ? (
-            <WorkoutCard 
-              workout={todaysWorkout as Workout} 
-              featured={true} 
-              onClick={onPlayWorkout} 
-            />
+            <WorkoutCard workout={todaysWorkout} onClick={onPlayWorkout} featured />
           ) : (
             <div className="bg-white rounded-xl p-8 text-center border border-gray-100">
-              <div className="w-16 h-16 bg-sand rounded-full flex items-center justify-center mx-auto mb-4 text-gray-400">
-                <CalendarIcon size={24} />
-              </div>
-              <h4 className="font-serif text-lg font-bold text-navy mb-2">Rest Day</h4>
+              <div className="w-16 h-16 bg-sand rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">🧘</div>
+              <h4 className="font-serif text-lg text-charcoal mb-2">Rest Day</h4>
               <p className="text-sm text-gray-500">Take some time to recover and prepare for tomorrow's session.</p>
             </div>
           )}
-          
-          <button className="w-full mt-4 py-3 rounded-full border border-navy text-navy font-bold text-sm hover:bg-navy/5 transition-colors flex items-center justify-center">
-            <CalendarIcon size={16} className="mr-2" />
-            Add Schedule to Calendar
-          </button>
+        </div>
+
+        <div className="px-6 mt-4">
+          <Button variant="outline" fullWidth size="sm" className="gap-2">
+            {ICONS.CALENDAR} Add Schedule to Calendar
+          </Button>
+        </div>
+      </section>
+
+      {wishlistProductsList.length > 0 && (
+        <section className="mt-10 pl-6 animate-[fadeIn_0.5s_ease-out]">
+          <h2 className="font-serif text-xl text-charcoal mb-4 flex items-center gap-2">
+            Your Wishlist <span className="text-sm text-gray-400 font-sans">({wishlistProductsList.length})</span>
+          </h2>
+          <div className="flex space-x-4 overflow-x-auto pb-4 no-scrollbar pr-6">
+            {wishlistProductsList.map(product => (
+              <div key={product.id} className="min-w-[180px] w-[180px]">
+                <ProductCard product={product} onOpen={setSelectedProduct} />
+              </div>
+            ))}
+          </div>
         </section>
-
-        {/* Wishlist */}
-        {wishlistProducts.length > 0 && (
-          <section>
-            <h3 className="font-serif text-xl font-bold text-navy mb-4">Your Wishlist</h3>
-            <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              {wishlistProducts.map(product => (
-                <div key={product.id} className="w-64 flex-shrink-0">
-                  <ProductCard 
-                    product={product} 
-                    onClick={setSelectedProduct} 
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Favorites */}
-        {favoriteWorkouts.length > 0 && (
-          <section>
-            <h3 className="font-serif text-xl font-bold text-navy mb-4">Your Favorite Classes</h3>
-            <div className="flex space-x-4 overflow-x-auto pb-4 scrollbar-hide -mx-6 px-6">
-              {favoriteWorkouts.map(workout => (
-                <WorkoutCard 
-                  key={workout.id} 
-                  workout={workout} 
-                  onClick={onPlayWorkout} 
-                />
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-
-      {selectedProduct && (
-        <ProductModal 
-          product={selectedProduct} 
-          onClose={() => setSelectedProduct(null)} 
-        />
       )}
+
+      {favoriteWorkoutsList.length > 0 && (
+        <section className="mt-8 pl-6 animate-[fadeIn_0.5s_ease-out]">
+          <h2 className="font-serif text-xl text-charcoal mb-4 flex items-center gap-2">
+            Your Favorite Classes <span className="text-sm text-gray-400 font-sans">({favoriteWorkoutsList.length})</span>
+          </h2>
+          <div className="flex space-x-4 overflow-x-auto pb-8 no-scrollbar pr-6">
+            {favoriteWorkoutsList.map(w => (
+              <WorkoutCard key={w.id} workout={w} onClick={onPlayWorkout} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <ProductModal
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+      />
     </div>
   );
 }

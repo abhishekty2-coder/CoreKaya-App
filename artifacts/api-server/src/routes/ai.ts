@@ -4,7 +4,7 @@ import { z } from "zod";
 
 const router = Router();
 
-const MODEL = "gemini-2.0-flash";
+const MODEL = "gemini-2.5-flash";
 
 async function generateText(prompt: string): Promise<string> {
   const response = await ai.models.generateContent({

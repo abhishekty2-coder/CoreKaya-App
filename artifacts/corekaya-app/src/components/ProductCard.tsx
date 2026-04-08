@@ -1,85 +1,76 @@
-import { Heart } from "lucide-react";
-import { Product } from "@workspace/api-client-react";
-import { useGetUserWishlist, useToggleWishlistProduct, getGetUserWishlistQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { Button } from "./ui/Button";
+import React from 'react';
+import { Product } from '@workspace/api-client-react';
+import { Button } from './Button';
+import { useUser } from '../context/UserContext';
+import { FavoriteToggleButton } from './FavoriteToggleButton';
 
 interface ProductCardProps {
   product: Product;
-  onClick: (product: Product) => void;
+  onOpen: (product: Product) => void;
 }
 
-export function ProductCard({ product, onClick }: ProductCardProps) {
-  const queryClient = useQueryClient();
-  const { data: wishlistData } = useGetUserWishlist();
-  const toggleWishlist = useToggleWishlistProduct();
+export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpen }) => {
+  const { isProductInWishlist, toggleWishlistProduct } = useUser();
+  const isWishlisted = isProductInWishlist(product.id);
 
-  const isWishlisted = wishlistData?.wishlist.includes(product.id) || false;
-
-  const handleWishlistToggle = (e: React.MouseEvent) => {
-    e.preventDefault();
+  const handleToggleWishlist = (e: React.MouseEvent) => {
     e.stopPropagation();
-
-    // Optimistic update
-    const previousWishlist = queryClient.getQueryData(getGetUserWishlistQueryKey());
-    queryClient.setQueryData(getGetUserWishlistQueryKey(), (old: any) => {
-      if (!old) return { wishlist: [product.id] };
-      const newWishlist = isWishlisted 
-        ? old.wishlist.filter((id: number) => id !== product.id)
-        : [...old.wishlist, product.id];
-      return { ...old, wishlist: newWishlist };
-    });
-
-    toggleWishlist.mutate({ data: { productId: product.id } }, {
-      onError: () => {
-        // Revert on error
-        queryClient.setQueryData(getGetUserWishlistQueryKey(), previousWishlist);
-      }
-    });
+    toggleWishlistProduct(product.id);
   };
 
   return (
-    <div 
-      className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer border border-gray-100 group flex flex-col h-full"
-      onClick={() => onClick(product)}
+    <div
+      onClick={() => onOpen(product)}
+      className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer group relative"
       data-testid={`product-card-${product.id}`}
     >
-      <div className="relative aspect-square overflow-hidden bg-gray-50">
-        <img 
-          src={product.imageUrl} 
+      <div className="relative aspect-square bg-gray-50">
+        <img
+          src={product.imageUrl}
           alt={product.name}
-          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          className="absolute inset-0 w-full h-full object-cover mix-blend-multiply opacity-90 group-hover:opacity-100 transition-opacity"
+          loading="lazy"
         />
-        
-        {/* Top Badges/Icons */}
-        <div className="absolute top-3 left-3 right-3 flex justify-between items-start">
-          <span className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-sm bg-white/80 backdrop-blur-sm text-navy">
-            {product.category}
-          </span>
-          <button
-            onClick={handleWishlistToggle}
-            className="w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center text-gray-400 hover:text-orange transition-colors"
-            data-testid={`wishlist-toggle-${product.id}`}
-          >
-            <Heart size={16} className={isWishlisted ? "fill-orange text-orange" : ""} />
-          </button>
+        <div className="absolute top-2 left-2 bg-white/90 backdrop-blur px-2 py-1 rounded text-[10px] font-bold tracking-wide uppercase text-charcoal/80">
+          {product.category === 'Large Equipment' ? 'Equipment' : 'Prop'}
+        </div>
+
+        <div className="absolute top-2 right-2 z-10">
+          <div className="bg-white/80 backdrop-blur-sm rounded-full p-1.5 shadow-sm">
+            <FavoriteToggleButton
+              isActive={isWishlisted}
+              onToggle={handleToggleWishlist}
+              size="sm"
+            />
+          </div>
         </div>
       </div>
-      
-      <div className="p-4 flex flex-col flex-1">
-        <h3 className="font-serif text-navy font-bold leading-tight mb-1 text-base">
+
+      <div className="p-3">
+        <h3 className="font-serif text-base leading-tight mb-1 text-charcoal h-10 overflow-hidden line-clamp-2">
           {product.name}
         </h3>
-        <p className="text-orange font-medium text-sm mb-3">
+        <p className="text-sm font-medium text-navy-dark mb-2">
           {product.priceDisplay}
         </p>
-        <p className="text-gray-500 text-xs line-clamp-2 mb-4 flex-1">
+
+        <p className="text-xs text-gray-500 mb-3 line-clamp-2 h-8 leading-4">
           {product.description}
         </p>
-        <Button variant="outline" size="sm" fullWidth className="mt-auto pointer-events-none group-hover:bg-navy group-hover:text-white transition-colors">
+
+        <Button
+          variant="outline"
+          fullWidth
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(product);
+          }}
+          className="text-xs font-bold tracking-wider uppercase border-navy/30 hover:bg-navy hover:border-navy"
+        >
           View Details
         </Button>
       </div>
     </div>
   );
-}
+};

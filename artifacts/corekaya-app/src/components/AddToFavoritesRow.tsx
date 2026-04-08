@@ -1,52 +1,40 @@
-import { Heart } from "lucide-react";
-import { useToggleFavoriteWorkout, useGetUserFavorites, getGetUserFavoritesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import React from 'react';
+import { useUser } from '../context/UserContext';
 
 interface AddToFavoritesRowProps {
   workoutId: number;
 }
 
-export function AddToFavoritesRow({ workoutId }: AddToFavoritesRowProps) {
-  const queryClient = useQueryClient();
-  const { data: favoritesData } = useGetUserFavorites();
-  const toggleFavorite = useToggleFavoriteWorkout();
-
-  const isFavorite = favoritesData?.favorites.includes(workoutId) || false;
-
-  const handleToggle = () => {
-    // Optimistic update
-    const previousFavorites = queryClient.getQueryData(getGetUserFavoritesQueryKey());
-    queryClient.setQueryData(getGetUserFavoritesQueryKey(), (old: any) => {
-      if (!old) return { favorites: [workoutId] };
-      const newFavorites = isFavorite 
-        ? old.favorites.filter((id: number) => id !== workoutId)
-        : [...old.favorites, workoutId];
-      return { ...old, favorites: newFavorites };
-    });
-
-    toggleFavorite.mutate({ data: { workoutId } }, {
-      onError: () => {
-        // Revert on error
-        queryClient.setQueryData(getGetUserFavoritesQueryKey(), previousFavorites);
-      }
-    });
-  };
+export const AddToFavoritesRow: React.FC<AddToFavoritesRowProps> = ({ workoutId }) => {
+  const { isWorkoutFavorite, toggleFavoriteWorkout } = useUser();
+  const isFavorite = isWorkoutFavorite(workoutId);
 
   return (
     <button
-      onClick={handleToggle}
-      className="flex items-center justify-between w-full py-4 border-b border-white/10 group"
+      onClick={() => toggleFavoriteWorkout(workoutId)}
+      className="flex items-center gap-3 py-4 w-full group focus:outline-none transition-all"
+      aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
       data-testid={`add-favorite-row-${workoutId}`}
     >
-      <span className="text-white text-sm font-medium">
-        {isFavorite ? "Added to Favorites" : "Add to Favorites"}
-      </span>
-      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-white/20 transition-colors">
-        <Heart
-          size={16}
-          className={`transition-colors ${isFavorite ? "fill-orange text-orange" : "text-white"}`}
-        />
+      <div className="relative">
+        <svg
+          className={`w-6 h-6 transition-all duration-300 ease-out ${
+            isFavorite ? 'text-orange fill-orange scale-110' : 'text-gray-400 fill-transparent group-hover:text-white'
+          }`}
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={isFavorite ? 0 : 2}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+          />
+        </svg>
       </div>
+      <span className={`text-sm font-medium transition-colors ${isFavorite ? 'text-orange' : 'text-white/80'}`}>
+        {isFavorite ? 'In Your Favorites' : 'Add to Favorites'}
+      </span>
     </button>
   );
-}
+};

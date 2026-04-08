@@ -22,7 +22,7 @@ pnpm workspace monorepo using TypeScript.
 - **Validation**: Zod (v3, `import { z } from "zod"`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec in `lib/api-spec/openapi.yaml`)
 - **Build**: esbuild (ESM bundle for api-server)
-- **AI**: Gemini via `@workspace/integrations-gemini-ai` (model: gemini-2.0-flash)
+- **AI**: Gemini via `@workspace/integrations-gemini-ai` (model: gemini-2.5-flash)
 
 ## Database Schema (lib/db/src/schema/)
 

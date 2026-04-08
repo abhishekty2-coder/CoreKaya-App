@@ -1,64 +1,38 @@
-import { Heart } from "lucide-react";
-import { useToggleFavoriteWorkout, useGetUserFavorites, getGetUserFavoritesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import React from 'react';
 
 interface FavoriteToggleButtonProps {
-  workoutId: number;
-  size?: "sm" | "md" | "lg";
-  className?: string;
+  isActive: boolean;
+  onToggle: (e: React.MouseEvent) => void;
+  size?: 'sm' | 'md';
 }
 
-export function FavoriteToggleButton({ workoutId, size = "md", className = "" }: FavoriteToggleButtonProps) {
-  const queryClient = useQueryClient();
-  const { data: favoritesData } = useGetUserFavorites();
-  const toggleFavorite = useToggleFavoriteWorkout();
-
-  const isFavorite = favoritesData?.favorites.includes(workoutId) || false;
-
-  const sizeClasses = {
-    sm: "w-6 h-6",
-    md: "w-8 h-8",
-    lg: "w-10 h-10",
-  };
-
-  const iconSizes = {
-    sm: 14,
-    md: 18,
-    lg: 22,
-  };
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // Optimistic update
-    const previousFavorites = queryClient.getQueryData(getGetUserFavoritesQueryKey());
-    queryClient.setQueryData(getGetUserFavoritesQueryKey(), (old: any) => {
-      if (!old) return { favorites: [workoutId] };
-      const newFavorites = isFavorite 
-        ? old.favorites.filter((id: number) => id !== workoutId)
-        : [...old.favorites, workoutId];
-      return { ...old, favorites: newFavorites };
-    });
-
-    toggleFavorite.mutate({ data: { workoutId } }, {
-      onError: () => {
-        // Revert on error
-        queryClient.setQueryData(getGetUserFavoritesQueryKey(), previousFavorites);
-      }
-    });
-  };
+export const FavoriteToggleButton: React.FC<FavoriteToggleButtonProps> = ({
+  isActive,
+  onToggle,
+  size = 'md',
+}) => {
+  const iconSize = size === 'sm' ? 'w-4 h-4' : 'w-5 h-5';
 
   return (
     <button
-      onClick={handleToggle}
-      className={`flex items-center justify-center rounded-full bg-white/20 backdrop-blur-sm border border-white/30 transition-colors hover:bg-white/40 ${sizeClasses[size]} ${className}`}
-      data-testid={`favorite-toggle-${workoutId}`}
+      onClick={onToggle}
+      className="flex items-center justify-center focus:outline-none"
+      aria-label={isActive ? 'Remove from wishlist' : 'Add to wishlist'}
     >
-      <Heart
-        size={iconSizes[size]}
-        className={`transition-colors ${isFavorite ? "fill-orange text-orange" : "text-white"}`}
-      />
+      <svg
+        className={`${iconSize} transition-all duration-300 ease-out ${
+          isActive ? 'text-orange fill-orange scale-110' : 'text-gray-400 fill-transparent hover:text-orange'
+        }`}
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        strokeWidth={isActive ? 0 : 2}
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+        />
+      </svg>
     </button>
   );
-}
+};

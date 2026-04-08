@@ -1,75 +1,70 @@
-import { useState } from "react";
-import { useListProducts } from "@workspace/api-client-react";
-import { ProductCard } from "@/components/ProductCard";
-import { ProductModal } from "@/components/ProductModal";
-import { Product } from "@workspace/api-client-react";
+import React, { useState } from 'react';
+import { useListProducts, Product } from '@workspace/api-client-react';
+import { ProductCard } from '../components/ProductCard';
+import { ProductModal } from '../components/ProductModal';
 
-const CATEGORIES = ["All", "Large Equipment", "Small Props", "Accessories", "Bundles"];
+const SHOP_CATEGORIES = ['All', 'Large Equipment', 'Small Props', 'Accessories', 'Bundles'];
 
 export function ShopTab() {
-  const [activeFilter, setActiveFilter] = useState("All");
+  const [filter, setFilter] = useState<string>('All');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
   const { data: products = [], isLoading } = useListProducts(
-    activeFilter === "All" ? undefined : { category: activeFilter }
+    filter === 'All' ? undefined : { category: filter }
   );
 
   return (
-    <div className="pb-32 min-h-screen bg-sand">
-      {/* Header */}
-      <div className="pt-12 px-6 pb-6 bg-white sticky top-0 z-40 border-b border-gray-100">
-        <h1 className="font-serif text-3xl font-bold text-navy mb-4">The Shop</h1>
+    <div className="min-h-screen bg-sand pb-24 relative">
+      <header className="px-6 pt-12 pb-6 bg-white sticky top-0 z-40 shadow-sm">
+        <h1 className="font-serif text-3xl text-charcoal mb-2">The Shop</h1>
+        <p className="text-gray-500 text-sm">Curated apparatus and essentials.</p>
 
-        {/* Filter Scroll */}
-        <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide -mx-6 px-6">
-          {CATEGORIES.map(category => (
+        <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
+          {SHOP_CATEGORIES.map((cat) => (
             <button
-              key={category}
-              onClick={() => setActiveFilter(category)}
-              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                activeFilter === category
-                  ? "bg-navy text-white shadow-sm"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
+              key={cat}
+              onClick={() => setFilter(cat)}
+              className={`px-4 py-2 text-xs font-bold uppercase tracking-wider whitespace-nowrap rounded-full transition-all
+                ${filter === cat
+                  ? 'bg-charcoal text-white shadow-md'
+                  : 'bg-sand-dark text-gray-500 hover:bg-sand'}`}
             >
-              {category}
+              {cat}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* Grid */}
-      <div className="p-6">
+      <div className="px-4 py-6 grid grid-cols-2 gap-4">
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((n) => (
+          <>
+            {[1, 2, 3, 4].map(n => (
               <div key={n} className="w-full aspect-square rounded-xl bg-gray-200 animate-pulse" />
             ))}
-          </div>
+          </>
         ) : products.length > 0 ? (
-          <div className="grid grid-cols-2 gap-4">
-            {products.map(product => (
-              <ProductCard 
-                key={product.id}
-                product={product}
-                onClick={setSelectedProduct}
-              />
-            ))}
-          </div>
+          products.map(product => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              onOpen={setSelectedProduct}
+            />
+          ))
         ) : (
-          <div className="text-center py-20">
-            <h3 className="font-serif text-xl font-bold text-navy mb-2">No Products Found</h3>
-            <p className="text-gray-500">We couldn't find any products in this category.</p>
+          <div className="col-span-2 flex flex-col items-center justify-center py-20 text-center">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center text-3xl mb-4 grayscale opacity-50">
+              🛍️
+            </div>
+            <h3 className="font-serif text-lg text-charcoal mb-1">Nothing in {filter}</h3>
+            <p className="text-sm text-gray-400">Check back soon for new arrivals.</p>
           </div>
         )}
       </div>
 
-      {selectedProduct && (
-        <ProductModal 
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-        />
-      )}
+      <ProductModal
+        product={selectedProduct}
+        onClose={() => setSelectedProduct(null)}
+      />
     </div>
   );
 }
