@@ -1,0 +1,24 @@
+There is a critical issue in admin-to-frontend sync which must be fixed properly at the root level. Right now, when we edit a product in the admin dashboard (especially product media), the changes are not reflecting correctly on the live website and even sometimes not updating properly in preview. The specific issue is that when uploading multiple images, the same default image is getting duplicated instead of saving unique images, and even after saving, the frontend does not show updated images. This clearly indicates a problem in image upload handling, database storage, or API response syncing.
+
+Fix this completely by ensuring that every uploaded image is stored as a unique entry in the database with a proper URL/path, not overwritten or duplicated. The "main image" logic should only mark the first image as primary, not replace all images. Verify that the backend API correctly returns all product media items, and the frontend properly renders them without caching stale data.
+
+Also implement real-time or instant reflection of admin changes without requiring manual republish. This means: after clicking “Save Product”, the updated data must immediately reflect on the live site by fetching fresh data from the database (no static build dependency or cache issue). Disable or properly manage caching (frontend, API, or CDN if any) so that updated images and product data always load fresh.
+
+Additionally, debug why preview and live site are behaving inconsistently — both should use the same data source and API. Ensure admin dashboard, preview, and live website are all connected to the same database instance and environment.
+
+Do not patch superficially — identify whether the issue is in:
+
+Image upload handler
+Database write logic
+API response
+Frontend rendering
+Caching layer
+
+Fix all layers properly so that:
+
+Multiple images upload correctly
+Correct images save and persist
+Admin changes reflect instantly
+No duplicate/default image override happens
+
+Test this end-to-end after fixing by uploading 2–3 different images and confirming they appear correctly on both preview and live site.
