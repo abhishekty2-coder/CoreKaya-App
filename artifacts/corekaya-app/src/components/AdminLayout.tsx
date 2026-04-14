@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Dumbbell, ShoppingBag, MessageSquare, Calendar, LogOut } from "lucide-react";
+import { LayoutDashboard, Dumbbell, ShoppingBag, MessageSquare, Calendar, LogOut, Trophy } from "lucide-react";
 
 export function AdminLayout({ children }: { children: React.ReactNode }) {
   const [, setLocation] = useLocation();
@@ -39,6 +39,10 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
           <Link href="/admin/schedule" className="flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 hover:text-navy hover:bg-gray-50">
             <Calendar className="mr-3 h-5 w-5 text-gray-400" />
             Schedule
+          </Link>
+          <Link href="/admin/gamification" className="flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 hover:text-navy hover:bg-gray-50">
+            <Trophy className="mr-3 h-5 w-5 text-gray-400" />
+            Gamification
           </Link>
         </nav>
         

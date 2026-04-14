@@ -5,9 +5,14 @@ import {
   userFavoritesTable,
   userWishlistTable,
   userCompletedWorkoutsTable,
+  userBodyCheckinsTable,
+  userOnboardingTable,
+  streakShieldsTable,
+  workoutsTable,
 } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { z } from "zod";
+import { checkAndAwardBadges, awardXpInternal, getOrCreateUserXp } from "./gamification";
 
 const router = Router();
 
@@ -110,7 +115,7 @@ router.post("/user/progress", async (req, res) => {
 
     const today = new Date().toISOString().split("T")[0];
     const state = await getOrCreateUserState(sessionId);
-    
+
     let newStreak = state.streak;
     if (state.lastWorkoutDate !== today) {
       const yesterday = new Date();
@@ -130,13 +135,133 @@ router.post("/user/progress", async (req, res) => {
       .where(eq(userCompletedWorkoutsTable.sessionId, sessionId));
     const uniqueWorkouts = [...new Set(completedRows.map((r) => r.workoutId))];
 
+    const baseXpResult = await awardXpInternal(sessionId, 10);
+    const newBadges = await checkAndAwardBadges(sessionId);
+    const finalXp = await getOrCreateUserXp(sessionId);
+
     res.json({
       streak: newStreak,
       completedWorkouts: uniqueWorkouts,
       lastWorkoutDate: today,
+      newBadges,
+      xpEarned: 10,
+      newLevel: baseXpResult.leveledUp ? baseXpResult.newLevel : null,
+      totalXp: finalXp.totalXp,
     });
   } catch (err) {
     res.status(400).json({ error: "Invalid request" });
+  }
+});
+
+router.post("/user/checkin", async (req, res) => {
+  try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const { workoutId, feeling } = z.object({
+      workoutId: z.number().int(),
+      feeling: z.enum(["easy", "good", "tough"]),
+    }).parse(req.body);
+
+    const [row] = await db.insert(userBodyCheckinsTable)
+      .values({ sessionId, workoutId, feeling })
+      .returning();
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ error: "Invalid request" });
+  }
+});
+
+router.get("/user/checkin-history", async (req, res) => {
+  try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const rows = await db
+      .select({
+        id: userBodyCheckinsTable.id,
+        sessionId: userBodyCheckinsTable.sessionId,
+        workoutId: userBodyCheckinsTable.workoutId,
+        feeling: userBodyCheckinsTable.feeling,
+        checkedInAt: userBodyCheckinsTable.checkedInAt,
+        workoutTitle: workoutsTable.title,
+      })
+      .from(userBodyCheckinsTable)
+      .leftJoin(workoutsTable, eq(userBodyCheckinsTable.workoutId, workoutsTable.id))
+      .where(eq(userBodyCheckinsTable.sessionId, sessionId))
+      .orderBy(desc(userBodyCheckinsTable.checkedInAt))
+      .limit(20);
+    res.json({ history: rows });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get check-in history" });
+  }
+});
+
+router.get("/user/onboarding", async (req, res) => {
+  try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const [row] = await db.select().from(userOnboardingTable).where(eq(userOnboardingTable.sessionId, sessionId));
+    if (!row) {
+      res.json({ isComplete: false });
+      return;
+    }
+    res.json(row);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to get onboarding" });
+  }
+});
+
+router.post("/user/onboarding", async (req, res) => {
+  try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const { goal, experienceLevel, equipmentOwned, daysPerWeek } = z.object({
+      goal: z.string(),
+      experienceLevel: z.string(),
+      equipmentOwned: z.array(z.string()),
+      daysPerWeek: z.number().int(),
+    }).parse(req.body);
+
+    const [existing] = await db.select().from(userOnboardingTable).where(eq(userOnboardingTable.sessionId, sessionId));
+    let row;
+    if (existing) {
+      [row] = await db.update(userOnboardingTable)
+        .set({ goal, experienceLevel, equipmentOwned, daysPerWeek, isComplete: true, completedAt: new Date() })
+        .where(eq(userOnboardingTable.sessionId, sessionId))
+        .returning();
+    } else {
+      [row] = await db.insert(userOnboardingTable)
+        .values({ sessionId, goal, experienceLevel, equipmentOwned, daysPerWeek, isComplete: true, completedAt: new Date() })
+        .returning();
+    }
+    res.json(row);
+  } catch (err) {
+    res.status(400).json({ error: "Invalid request" });
+  }
+});
+
+router.post("/user/streak-shield", async (req, res) => {
+  try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const [shield] = await db.select().from(streakShieldsTable).where(eq(streakShieldsTable.sessionId, sessionId));
+
+    if (!shield || shield.shieldsAvailable <= 0) {
+      res.json({ used: false, shieldsRemaining: 0 });
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    const newAvailable = shield.shieldsAvailable - 1;
+
+    await db.update(streakShieldsTable)
+      .set({ shieldsAvailable: newAvailable })
+      .where(eq(streakShieldsTable.sessionId, sessionId));
+
+    const [state] = await db.select().from(userStateTable).where(eq(userStateTable.sessionId, sessionId));
+    if (state) {
+      await db.update(userStateTable)
+        .set({ lastWorkoutDate: today })
+        .where(eq(userStateTable.sessionId, sessionId));
+    }
+
+    res.json({ used: true, shieldsRemaining: newAvailable });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to use streak shield" });
   }
 });
 

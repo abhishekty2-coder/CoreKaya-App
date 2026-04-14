@@ -37,12 +37,38 @@ pnpm workspace monorepo using TypeScript.
 
 ## Frontend Pages (artifacts/corekaya-app/src/pages/)
 
-- **HomeTab** — Weekly Drop dashboard: calendar strip, today's workout, wishlist, favorites
-- **LabsTab** — Filterable workout grid
+- **HomeTab** — Weekly Drop: XP progress bar, streak pill with FlameSVG, stats strip (4 cards), day rings, today's prescription, daily AI insight card, notification bar after 6pm, PostWorkoutRitual integration
+- **LabsTab** — Filterable workout grid with apparatus chips; progress-gated locks (Advanced locked <10 workouts, Reformer locked without equipment); people-count labels; completion checkmarks
 - **ShopTab** — Product grid with category filtering
-- **AiCoachTab** — Concierge mode (Q&A + daily insight) and Instructor Mode (session planner)
+- **AiCoachTab** — Concierge mode (Q&A + daily insight) and Instructor Mode (session planner); accepts onPlayWorkout prop
 - **Player** — Full-screen workout player (state-based, not a route)
-- **admin/** — Admin dashboard (password: corekaya2025): overview, workouts CRUD, products CRUD, quotes, schedule editor
+- **Onboarding** — 6-step onboarding flow (welcome, goal, experience, equipment, days/week, ready); shown to new sessions
+- **ProfilePage** — 5th "Me" tab: level/XP card, streak ring visualization, badges showcase, body-feel chart, workout history
+- **BadgesPage** — Full-screen achievements overlay: earned/locked badge grid with dates
+- **PostWorkoutRitual** — 4-stage post-workout flow (burst → stats reveal → body check-in → what's next) replacing CelebrationOverlay
+- **BreathingInterstitial** — Animated breathing pause before workout player launches
+- **admin/AdminGamification** — Badge CRUD table + user progress leaderboard
+
+## Context
+
+- **UserContext** now exposes: `onboarding`, `xpData`, `badges`, `checkInHistory`, `isOnboardingLoading`, `completeWorkoutWithRitual`, `saveOnboarding`, `submitCheckin`, `refetchXp`, `refetchBadges`, `refetchCheckins`
+- New API endpoints (direct fetch): `/api/gamification/status`, `/api/gamification/badges`, `/api/user/onboarding`, `/api/user/checkin`, `/api/user/checkin-history`, `/api/ai/session-debrief`, `/api/ai/wellness-tip`
+- Navigation: 5 tabs — home, labs, shop, ai, profile
+- Color tokens added: `--color-success: #22C55E`, `--color-amber: #F59E0B`
+- Animation added: `fadeSlideIn` for tab transitions
+
+## Gamification DB Tables (lib/db/src/schema/gamification.ts)
+- **user_xp** — Per-session XP totals
+- **badges** — Badge definitions (seeded on startup)
+- **user_badges** — Earned badges per session
+- **user_body_checkins** — Post-workout feeling check-ins (easy/good/tough)
+- **user_onboarding** — 6-step onboarding answers + completion flag
+- **streak_shields** — Shield usage tracking
+
+## Admin Dashboard
+
+- URL: `/admin` (password: corekaya2025)
+- Pages: Overview, Workouts CRUD, Products CRUD, Quotes, Schedule, Gamification
 
 ## Color Palette
 

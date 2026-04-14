@@ -117,7 +117,11 @@ const renderPlanOutput = (text: string) => {
   });
 };
 
-export function AiCoachTab() {
+interface AiCoachTabProps {
+  onPlayWorkout?: (id: number) => void;
+}
+
+export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
   const [mode, setMode] = useState<Mode>('concierge');
 
   const [tip, setTip] = useState<string | null>(null);

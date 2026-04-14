@@ -7,6 +7,7 @@ import userRouter from "./user";
 import quotesRouter from "./quotes";
 import adminRouter from "./admin";
 import aiRouter from "./ai";
+import gamificationRouter from "./gamification";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(userRouter);
 router.use(quotesRouter);
 router.use(adminRouter);
 router.use(aiRouter);
+router.use(gamificationRouter);
 
 export default router;

@@ -1,10 +1,14 @@
 import { Router } from "express";
 import { ai } from "@workspace/integrations-gemini-ai";
+import { db } from "@workspace/db";
+import { workoutsTable, userOnboardingTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 const router = Router();
 
 const MODEL = "gemini-2.5-flash";
+const DEFAULT_SESSION_ID = "session-default";
 
 async function generateText(prompt: string): Promise<string> {
   const response = await ai.models.generateContent({
@@ -14,14 +18,27 @@ async function generateText(prompt: string): Promise<string> {
   return response.text ?? "";
 }
 
+async function getOnboardingContext(sessionId: string): Promise<string> {
+  const [row] = await db.select().from(userOnboardingTable).where(eq(userOnboardingTable.sessionId, sessionId));
+  if (!row || !row.isComplete) return "";
+  const equipment = row.equipmentOwned?.join(", ") || "mat";
+  return `User profile: goal=${row.goal}, level=${row.experienceLevel}, equipment=${equipment}, days_per_week=${row.daysPerWeek}. Personalize every response to this profile.`;
+}
+
 router.post("/ai/wellness-tip", async (req, res) => {
   try {
-    const { mood, energy } = z.object({
-      mood: z.string(),
-      energy: z.string(),
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
+    const { mood, energy, recentFeelings } = z.object({
+      mood: z.string().optional().default("neutral"),
+      energy: z.string().optional().default("medium"),
+      recentFeelings: z.array(z.string()).optional().default([]),
     }).parse(req.body);
 
-    const prompt = `You are a CoreKaya Pilates Labs wellness coach. A client reports their current mood as "${mood}" and energy level as "${energy}". Give them a short, personalized wellness tip (2-3 sentences) that is uplifting, practical, and grounded in Pilates/movement philosophy. Keep it warm and motivating. Do not use asterisks or markdown formatting.`;
+    const historyContext = recentFeelings.length > 0
+      ? `Based on recent sessions the user rated: ${recentFeelings.join(", ")}. `
+      : "";
+
+    const prompt = `You are a CoreKaya Pilates Labs wellness coach. ${historyContext}A client reports their current mood as "${mood}" and energy level as "${energy}". Give them a short, personalized wellness tip (2-3 sentences) that is uplifting, practical, and grounded in Pilates/movement philosophy. Keep it warm and motivating. Do not use asterisks or markdown formatting.`;
     const text = await generateText(prompt);
     res.json({ text });
   } catch (err) {
@@ -31,9 +48,13 @@ router.post("/ai/wellness-tip", async (req, res) => {
 
 router.post("/ai/ask", async (req, res) => {
   try {
+    const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
     const { question } = z.object({ question: z.string() }).parse(req.body);
 
-    const prompt = `You are the CoreKaya AI Coach — a knowledgeable, supportive Pilates and movement specialist. Answer the following question concisely and helpfully. If the question is not related to Pilates, movement, wellness, or CoreKaya equipment, gently redirect the conversation. Do not use asterisks or markdown formatting.\n\nQuestion: ${question}`;
+    const profileContext = await getOnboardingContext(sessionId);
+    const contextPrefix = profileContext ? `${profileContext}\n\n` : "";
+
+    const prompt = `${contextPrefix}You are the CoreKaya AI Coach — a knowledgeable, supportive Pilates and movement specialist. Answer the following question concisely and helpfully. If the question is not related to Pilates, movement, wellness, or CoreKaya equipment, gently redirect the conversation. Do not use asterisks or markdown formatting.\n\nQuestion: ${question}`;
     const text = await generateText(prompt);
     res.json({ text });
   } catch (err) {
@@ -69,6 +90,24 @@ Be specific, practical, and encouraging. Tailor exercises to the available equip
     res.json({ text });
   } catch (err) {
     res.status(500).json({ error: "Failed to generate session plan" });
+  }
+});
+
+router.post("/ai/session-debrief", async (req, res) => {
+  try {
+    const { workoutId, feeling } = z.object({
+      workoutId: z.number().int(),
+      feeling: z.enum(["easy", "good", "tough"]),
+    }).parse(req.body);
+
+    const [workout] = await db.select().from(workoutsTable).where(eq(workoutsTable.id, workoutId));
+    const workoutTitle = workout?.title ?? "your workout";
+
+    const prompt = `You are the CoreKaya AI Coach. The user just completed "${workoutTitle}" and reported it felt "${feeling}". Give them a 2-sentence debrief: one sentence acknowledging how they felt, and one sentence previewing what this session builds toward in their Pilates journey. Be warm, specific, and coach-like. Do not use asterisks or markdown formatting.`;
+    const text = await generateText(prompt);
+    res.json({ text });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to generate session debrief" });
   }
 });
 

@@ -48,6 +48,8 @@
   --color-sand: #F5F0E8;
   --color-sand-dark: #EDE8DF;
   --color-charcoal: #2D3748;
+  --color-success: #22C55E;
+  --color-amber: #F59E0B;
 
   --font-sans: var(--app-font-sans);
   --font-serif: var(--app-font-serif);
@@ -224,4 +226,9 @@
 @keyframes bounce {
   0%, 100% { transform: translateY(0); animation-timing-function: cubic-bezier(0.8,0,1,1); }
   50% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0,0,0.2,1); }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }

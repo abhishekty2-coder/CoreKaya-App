@@ -1,0 +1,388 @@
+# CoreKaya Pilates Labs — Master Build Prompt
+
+You are building **CoreKaya Pilates Labs**, a premium mobile-first React + Express app for Pilates equipment owners. The existing codebase is a React frontend (Vite + Tailwind + shadcn/ui) with a Node/Express API backend using Drizzle ORM on PostgreSQL, with Gemini AI integration. The current app has four tabs: Weekly Drop (home), The Labs (workout library), Shop (equipment store), and AI Coach. The session-based user system tracks streak, favorites, wishlist, and completed workouts.
+
+Everything below is an instruction. Build it exactly as described. Do not ask for clarification. Do not skip sections. Apply everything in sequence.
+
+---
+
+## SECTION 1 — DATABASE SCHEMA ADDITIONS
+
+Add the following new tables to `lib/db/src/schema/`. Create a new file `lib/db/src/schema/gamification.ts` and add all of these:
+
+**Table: `user_xp`**
+Fields: `id` (serial PK), `session_id` (text, not null), `total_xp` (integer, default 0), `level` (integer, default 1), `updated_at` (timestamp with timezone, auto-update).
+
+**Table: `badges`**
+Fields: `id` (serial PK), `slug` (text, unique, not null), `name` (text, not null), `description` (text, not null), `icon_emoji` (text, not null), `xp_reward` (integer, default 0), `unlock_condition_type` (text, not null — values: `streak`, `workouts_completed`, `category_count`, `first_workout`), `unlock_condition_value` (integer, not null).
+
+**Table: `user_badges`**
+Fields: `id` (serial PK), `session_id` (text, not null), `badge_id` (integer, references badges.id), `earned_at` (timestamp with timezone, default now).
+
+**Table: `user_body_checkins`**
+Fields: `id` (serial PK), `session_id` (text, not null), `workout_id` (integer, not null), `feeling` (text, not null — values: `easy`, `good`, `tough`), `checked_in_at` (timestamp with timezone, default now).
+
+**Table: `user_onboarding`**
+Fields: `id` (serial PK), `session_id` (text, unique, not null), `goal` (text), `experience_level` (text), `equipment_owned` (text array, default empty), `days_per_week` (integer), `is_complete` (boolean, default false), `completed_at` (timestamp with timezone).
+
+**Table: `streak_shields`**
+Fields: `id` (serial PK), `session_id` (text, not null), `shields_available` (integer, default 1), `last_earned_at` (timestamp with timezone), `updated_at` (timestamp with timezone, auto-update).
+
+Export all of these from `lib/db/src/schema/index.ts`.
+
+Run the migration to apply these tables to the database.
+
+Seed the `badges` table with exactly these rows on startup if empty:
+
+| slug | name | description | icon_emoji | xp_reward | unlock_condition_type | unlock_condition_value |
+|---|---|---|---|---|---|---|
+| first-rep | First Rep | Completed your very first workout | 🔥 | 50 | first_workout | 1 |
+| three-day-flame | Three Day Flame | Maintained a 3-day streak | ⚡ | 75 | streak | 3 |
+| week-warrior | Week Warrior | Completed a full 7-day streak | 🏆 | 150 | streak | 7 |
+| reformer-initiate | Reformer Initiate | Completed 3 Reformer Lab workouts | 🛠️ | 100 | category_count | 3 |
+| mat-master | Mat Master | Completed 10 Mat Lab workouts | 🧘 | 200 | category_count | 10 |
+| century | Century | Completed 100 total workouts | 💎 | 500 | workouts_completed | 100 |
+| consistent-ten | Consistent Ten | Completed 10 total workouts | ⭐ | 100 | workouts_completed | 10 |
+
+---
+
+## SECTION 2 — API ROUTES ADDITIONS
+
+### 2a. XP and Badge Engine — `artifacts/api-server/src/routes/gamification.ts`
+
+Create this new route file. Export a router and register it in `src/routes/index.ts`.
+
+**`GET /gamification/status`**
+Reads `x-session-id` header. Returns the user's current XP total, level name, XP needed for next level, all badges that exist, and which badges the user has already earned (with `earned_at`). Level thresholds: Level 1 = 0 XP, Level 2 = 200 XP, Level 3 = 500 XP, Level 4 = 1000 XP, Level 5 = 2000 XP. Level names: Beginner, Practitioner, Devotee, Expert, CoreKaya Master.
+
+**`POST /gamification/award-xp`**
+Body: `{ amount: number, reason: string }`. Reads session id. Adds XP to `user_xp` table, recalculates level, returns updated totals. If the user levels up, include `leveledUp: true` and `newLevel` in the response.
+
+**Badge check function** — after every call to `POST /user/progress` (workout completion), run a badge eligibility check inside the same transaction. Check all badge conditions against the user's current stats. For any badge whose condition is now met and which the user has not yet earned, insert into `user_badges` and call `POST /gamification/award-xp` internally with that badge's `xp_reward`. Also award 10 XP baseline for any workout completion. Return a `newBadges` array in the workout completion response containing any newly earned badge objects.
+
+**`GET /gamification/badges`**
+Returns all badges with a boolean `earned` field and `earned_at` for those earned by this session.
+
+### 2b. Body Check-in Route — add to `artifacts/api-server/src/routes/user.ts`
+
+**`POST /user/checkin`**
+Body: `{ workoutId: number, feeling: 'easy' | 'good' | 'tough' }`. Inserts into `user_body_checkins`. Returns the inserted row.
+
+**`GET /user/checkin-history`**
+Returns last 20 check-ins for the session, joined with workout title.
+
+### 2c. Onboarding Route — add to `artifacts/api-server/src/routes/user.ts`
+
+**`GET /user/onboarding`**
+Returns the onboarding record for the session, or `{ isComplete: false }` if none exists.
+
+**`POST /user/onboarding`**
+Body: `{ goal, experienceLevel, equipmentOwned, daysPerWeek }`. Upserts into `user_onboarding`, marks `is_complete: true`. Returns the full record.
+
+### 2d. Streak Shield Route — add to `artifacts/api-server/src/routes/user.ts`
+
+**`POST /user/streak-shield`**
+When called, if the user's `shields_available > 0` in `streak_shields`, set `shields_available -= 1` and prevent the streak from resetting to zero on the current day by setting `last_workout_date` to today in `user_state`. Return `{ used: true, shieldsRemaining: number }`.
+
+### 2e. Workout Completion — update existing `POST /user/progress`
+
+Modify the existing response from `POST /user/progress` to also return:
+- `newBadges: BadgeObject[]` — any badges just earned
+- `xpEarned: number` — XP awarded for this completion
+- `newLevel: string | null` — if they leveled up, the new level name, else null
+- `totalXp: number` — their updated total XP
+
+---
+
+## SECTION 3 — FRONTEND: ONBOARDING FLOW
+
+Create `artifacts/corekaya-app/src/pages/Onboarding.tsx`.
+
+This is a full-screen multi-step flow that appears on first launch if `onboarding.isComplete` is false. It must occupy the full mobile frame with the same `max-w-md` container as the rest of the app.
+
+**Step 1 — Welcome**
+Full-screen dark navy background (`#1B2A4A`). CoreKaya serif logo centered. Below it: the text "Your personal Pilates studio, designed for you." Below that: a single pill button labeled "Let's begin →" in orange. No skip option.
+
+**Step 2 — What's your goal?**
+Clean white background. Serif heading: "What brings you here?" Four large pill-button options stacked vertically, each with an emoji and label: 🏋️ Build Strength, 🌿 Improve Flexibility, 🔥 Lose Weight, 🧘 Recovery & Mobility. Selected state: navy fill, white text. Only one can be selected.
+
+**Step 3 — Your experience level**
+Heading: "How experienced are you with Pilates?" Three options: Beginner (just starting), Intermediate (some experience), Advanced (very comfortable). Same pill button style as Step 2.
+
+**Step 4 — Equipment you own**
+Heading: "What equipment do you have?" Multi-select pills: Mat, Reformer, Magic Circle, Pilates Ball, Resistance Bands, Jumpboard, Tower. Selected state shows a checkmark. User can select multiple.
+
+**Step 5 — How many days per week?**
+Heading: "How many days can you commit?" A row of 7 numbered circle buttons labeled 1 through 7. Tapping one selects it (navy fill). Below: subtext "We'll build your weekly plan around this."
+
+**Step 6 — Ready screen**
+Dark navy again. Large animated checkmark or flame emoji. Heading: "Your CoreKaya journey starts now." Subtext: "Your first week is ready. Let's move." Button: "Enter the Labs →" in orange. When tapped, call `POST /user/onboarding` with all collected data, then set onboarding complete in local state and reveal the main app.
+
+Each step has a thin progress bar at the top showing completion percentage. A back arrow on steps 2–5. No back button on steps 1 and 6. Smooth horizontal slide transitions between steps using CSS transitions.
+
+In `App.tsx`, check `onboarding.isComplete` on load using the existing `UserContext`. If false, render `<Onboarding />` instead of `MobileApp`. Once `onboarding.isComplete` becomes true in state, transition to `MobileApp`.
+
+---
+
+## SECTION 4 — FRONTEND: GAMIFICATION LAYER
+
+### 4a. XP + Level Bar — add to HomeTab header
+
+Directly below the streak pill in the HomeTab header, add a new row showing:
+- A thin progress bar (full width of header, 4px height) in a warm sand color, filled navy-to-orange gradient proportional to progress within the current level
+- Below the bar: "Level 2 · Practitioner — 340 / 500 XP" in 10px muted text
+- Fetch this from `GET /gamification/status` on load
+
+### 4b. Badge Collection Page
+
+Create `artifacts/corekaya-app/src/pages/BadgesPage.tsx`.
+
+This is not a new tab. It is a bottom sheet or full-screen overlay that slides up from the bottom when the user taps a new "Achievements" button on the HomeTab. The button appears below the streak pill, small text link: "View all achievements →"
+
+The page shows:
+- A header: "Your Achievements"
+- Two sections: "Earned" and "Locked"
+- Each badge renders as a 80×80px card: the emoji large (36px), the badge name below in 11px serif, and for locked badges a grayscale overlay with a lock icon
+- Earned badges show their `earned_at` date in 10px muted text below the name
+- A close button (×) in the top right
+
+### 4c. Post-Workout Ritual Screen — replace CelebrationOverlay in HomeTab
+
+The existing `CelebrationOverlay` in `HomeTab.tsx` must be completely replaced with a new multi-stage ritual that triggers after `handleCompleteWorkout()` is called.
+
+**Stage 1 — Completion burst (1.5 seconds, auto-advance)**
+Full-screen black overlay. The workout title fades in large serif white text. Below it, a circular burst animation — pure CSS, radiating rings expanding outward from center, orange to transparent. Duration: 1.5 seconds, then auto-advances to Stage 2.
+
+**Stage 2 — Stats reveal**
+Same black overlay but this persists until user taps. Animated counter rolls up to show:
+- Streak: the number counts up from previous value to new value over 0.8 seconds
+- XP Earned: "+10 XP" fades in with a bounce, then if any badge was earned, the badge emoji bounces in with its name below it
+- If the user leveled up, show a full-width "LEVEL UP" banner in orange across the middle with the new level name
+
+**Stage 3 — Body check-in (required, cannot skip)**
+The overlay transitions to a softer dark navy. Text: "How did that feel?" Three large rounded buttons horizontally arranged:
+- 😌 Easy
+- 💪 Good  
+- 🔥 Tough
+
+When one is tapped, it calls `POST /user/checkin` with the feeling and workoutId, then triggers Stage 4.
+
+**Stage 4 — What's next (auto-dismisses after 3 seconds or on tap)**
+Shows tomorrow's scheduled workout card (small version). Text: "Tomorrow:" with the workout title and duration. A "See you then 👋" message. Tapping anywhere or waiting 3 seconds closes the entire overlay and returns to HomeTab.
+
+### 4d. Streak Shield UI
+
+In the HomeTab header streak pill, if the user has a streak of 5 or more days and their `shields_available > 0` in `streak_shields`, show a small shield icon (🛡️) inside the streak pill after the flame. If they have not worked out yet today and it is past 8pm, the streak pill turns amber and shows "Streak at risk — Use shield?" as a subtle tappable tooltip below it. Tapping the tooltip calls `POST /user/streak-shield`.
+
+---
+
+## SECTION 5 — FRONTEND: LABS TAB UPGRADES
+
+### 5a. Progress-Gated Content
+
+In `LabsTab.tsx`, each workout card must show a visual lock state if the user has not yet met the unlock requirement:
+
+- Any workout tagged `difficulty: 'Advanced'` is locked until the user has 10+ completed workouts total
+- Any workout tagged `category: 'Reformer Lab'` is locked until the user's `onboarding.equipmentOwned` includes `'Reformer'` OR they have completed at least 1 Reformer Lab workout (giving the benefit of the doubt that they may have equipment not declared)
+
+For locked workouts, the thumbnail is rendered at 50% opacity with a centered lock icon (🔒) overlaid. The workout card is still tappable but instead of opening the player, it opens a bottom sheet that says: "Unlock this session" with the unlock condition explained and a "Keep going →" button that dismisses it.
+
+### 5b. Completion Checkmarks on Lab Cards
+
+Every `WorkoutCard` in the Labs grid that the user has previously completed shows a small navy checkmark badge in the top-right corner of the thumbnail. Use `userState.completedWorkouts` to determine this.
+
+### 5c. "People practicing now" indicator
+
+On each workout card in The Labs, show a subtle muted line below the instructor name: "12 people completed this week" — use a hardcoded plausible number seeded from the workout's `id` (use `(workout.id * 7 + 13) % 40 + 5` as a deterministic pseudo-random). This is display only, not a live query.
+
+---
+
+## SECTION 6 — FRONTEND: AI COACH UPGRADES
+
+### 6a. Personalized Concierge based on Onboarding
+
+Modify the AI Concierge's `POST /ai/ask` prompt system to include the user's onboarding data in the system context. Pull the onboarding record and inject it into every AI prompt:
+
+```
+User profile: goal=${goal}, level=${experienceLevel}, equipment=${equipmentOwned.join(', ')}, days_per_week=${daysPerWeek}. Personalize every response to this profile.
+```
+
+### 6b. Session Debrief
+
+After every `POST /user/checkin` call (body check-in from Stage 3 of the ritual), automatically call `POST /ai/session-debrief` with the workout id and feeling. Create this new route in `artifacts/api-server/src/routes/ai.ts`:
+
+**`POST /ai/session-debrief`**
+Body: `{ workoutId: number, feeling: 'easy' | 'good' | 'tough' }`. Fetches the workout title from the DB. Builds a prompt:
+
+```
+You are the CoreKaya AI Coach. The user just completed "${workoutTitle}" and reported it felt "${feeling}". Give them a 2-sentence debrief: one sentence acknowledging how they felt, and one sentence previewing what this session builds toward in their Pilates journey. Be warm, specific, and coach-like. No asterisks or markdown.
+```
+
+Return `{ text: string }`. On the frontend, display this debrief text at the bottom of Stage 4 (the "what's next" screen) in italic serif style, credited as "— AI Coach".
+
+### 6c. Instructor Mode — Connect to Real Workout Library
+
+In `AiCoachTab.tsx`, the existing "Instructor Mode" Session Planner generates a plain text plan. After generation, add a section below the plan titled "Recommended from The Labs" that queries `GET /workouts?category=<matched_category>&difficulty=<matched_difficulty>` based on what apparatus and mood the user selected, and renders up to 3 `WorkoutCard` components. These cards should be tappable and open the player via a prop passed down from `App.tsx`.
+
+---
+
+## SECTION 7 — FRONTEND: HOME TAB ADDITIONS
+
+### 7a. Daily Insight — make it real
+
+The existing "Reveal Today's Wisdom" button in the AI Concierge calls nothing functional. Replace the `POST /ai/wellness-tip` endpoint's prompt to use the user's check-in history. Pull their last 3 check-in feelings from `GET /user/checkin-history` and inject: "Based on recent sessions the user rated: ${history}. Generate today's wisdom accordingly." On the HomeTab, add a "Daily Insight" card below the Weekly Drop section that auto-loads (no button tap required) and shows the tip in italic serif text on a dark navy card.
+
+### 7b. Personal Stats Strip
+
+Add a horizontal scrollable stats strip on the HomeTab below the weekly days row. Four metric cards in a row (horizontal scroll, `overflow-x-auto`):
+
+- **Total Sessions** — `userState.completedWorkouts.length`
+- **This Week** — count of completions in the last 7 days (calculate from check-in history timestamps)
+- **Favorite Apparatus** — most frequently completed category from check-in history, or "—" if none
+- **XP Total** — from `GET /gamification/status`
+
+Each card: white background, 12px uppercase muted label on top, 20px bold navy number below. 100px wide, 64px tall, rounded-xl, subtle border.
+
+### 7c. Weekly Drop Completion Ring
+
+Replace the existing day-dot row with an enhanced version. Each day circle that has a workout assigned and is marked as done shows a small completion ring drawn in SVG around it (a circular arc, orange stroke, `stroke-dasharray` based on 100% completion). Days with a rest day or no workout assigned show a smaller circle with no ring, labeled "Rest". The today indicator remains navy filled.
+
+---
+
+## SECTION 8 — FRONTEND: PROFILE / PROGRESS PAGE
+
+Create `artifacts/corekaya-app/src/pages/ProfilePage.tsx`.
+
+Add a 5th tab to `Navigation.tsx` labeled "Me" with a person icon. This tab renders `ProfilePage`.
+
+The page layout from top to bottom:
+
+**Header area**: Large initials avatar (60px circle, navy background, white text showing "KM" for "Kaya Member"). Below: "Kaya Member" in serif. Below: their level badge ("Level 2 · Practitioner") in a small orange pill.
+
+**XP progress card**: A full-width white card with a horizontal progress bar (orange fill), showing current XP and XP needed for next level. Label above bar: "Progress to [next level name]".
+
+**Streak card**: Shows current streak with a row of the last 7 days as colored dots (orange = worked out, gray = missed, white with border = future). Below: "Best streak: X days" — calculate from check-in history.
+
+**Badge showcase**: Shows the 3 most recently earned badges as large emoji with name labels. A "See all →" link that opens `BadgesPage`.
+
+**Body Feel Chart**: A 7-bar mini bar chart showing the last 7 check-ins. Each bar is colored: green (easy), orange (good), red (tough). Height proportional to a value (easy=1, good=2, tough=3). Labels below each bar are the day abbreviation. This uses no charting library — pure CSS flexbox bars.
+
+**Workout History List**: A scrollable list of the last 10 completed workouts. Each row: workout thumbnail (32px circle), workout title, date completed, and the body feeling emoji from the check-in. Fetch from `/user/checkin-history`.
+
+---
+
+## SECTION 9 — GAME-CHANGER UX FEATURES
+
+### 9a. Breathing Room — Pre-Workout Countdown
+
+When the user taps a workout card to open the player, instead of immediately showing the player, show a 5-second "breathing" interstitial. The screen is dark navy. A circle pulses: expands over 4 seconds with text "Breathe in..." then contracts with "Begin." and the player loads. This is achieved purely in CSS `@keyframes` animation on a circle SVG element. After 5 seconds it auto-advances to the player. Add a small "Skip →" link in the top right that bypasses it immediately. This UX moment signals the premium, mindful nature of the brand.
+
+### 9b. Haptic-like Micro-interactions
+
+Every significant tap — completing a workout, earning a badge, selecting an onboarding option, tapping the streak pill — must trigger a scale bounce animation: `transform: scale(1.08)` for 120ms then back to `scale(1)`. Implement this as a shared Tailwind utility class `active:scale-105 transition-transform duration-150` applied to all interactive cards and buttons throughout the app. This creates a tactile feel even on web.
+
+### 9c. The Streak Flame — it breathes
+
+The 🔥 emoji in the streak pill in the HomeTab header must be replaced with an inline SVG flame component. The flame is two overlapping teardrop paths in orange and amber, animated with a slow `@keyframes` flickering animation (subtle scale + opacity oscillation, 2-second loop). When the streak is 7+, the flame is larger and has a second outer glow ring (orange opacity 20%, pulsing). When the streak is 0, the flame is gray/muted. This makes the streak feel alive.
+
+### 9d. The Lab Filter — Sticky Apparatus Selector
+
+In `LabsTab.tsx`, the category filter pills (All, Mat Lab, Reformer Lab, etc.) must become a sticky horizontally-scrollable row that stays pinned to the top of the scroll container (not the viewport, just the scroll area) as the user scrolls through workouts. The active pill should be navy filled. As the user scrolls past the header, the filter bar gets a subtle `backdrop-blur` and a 1px bottom border so it feels elevated.
+
+### 9e. Workout Card — the Play button hovers in
+
+Currently `WorkoutCard` is a static thumbnail. Upgrade it: on hover (desktop) or on first tap (mobile — use a `touched` state), the thumbnail image smoothly scales up to `scale(1.04)` and a play button (white circle with triangle, 48px) fades in centered over the thumbnail. A gradient overlay fades in from the bottom. The workout title moves down by 4px. This all happens in 200ms CSS transitions. On a second tap, it triggers `onPlayWorkout`. This two-tap pattern on mobile confirms intentionality and shows the play affordance.
+
+### 9f. Empty States are Branded
+
+Every empty state in the app (no favorites yet, no wishlist, no completed workouts, no check-in history) must be replaced with branded illustrated empty states. Each consists of: a large emoji (48px) that relates to the context, a serif heading ("Your mat is waiting"), and a 1-sentence call-to-action in muted text. Add a CTA button where relevant ("Browse The Labs →" for empty favorites). These are defined as a reusable `<EmptyState emoji icon heading cta />` component in `components/EmptyState.tsx`.
+
+### 9g. The Daily Streak Notification Bar
+
+At the top of the app, above the header, if the user has not worked out today and it is after 6pm (check via `new Date().getHours() >= 18`), show a 36px tall amber notification bar that slides down from the top: "🔥 Don't break your [X]-day streak — your workout is ready." The text is tappable and switches to the Weekly Drop tab. This bar has an × dismiss button on the right. Once dismissed it is hidden for the rest of the session (track in React state, not localStorage).
+
+---
+
+## SECTION 10 — ADMIN PANEL ADDITIONS
+
+### 10a. Gamification Admin Page
+
+Create `artifacts/corekaya-app/src/pages/admin/AdminGamification.tsx` and add it to the admin routes at `/admin/gamification`.
+
+This page shows:
+- A table of all badges with columns: emoji, name, condition type, condition value, how many users have earned it
+- An "Add Badge" button that opens a form to create a new badge (all fields from the badges table)
+- Each row has an edit and delete button
+
+Add "Gamification" to the `AdminLayout.tsx` sidebar navigation.
+
+### 10b. User Progress Admin View — add to AdminOverview
+
+Add a new section to `AdminOverview.tsx` titled "Active Users" that shows a table:
+- Session ID (last 8 chars only for privacy)
+- Total completed workouts
+- Current streak
+- Level name
+- Badges earned count
+
+Query this by joining `user_state`, `user_xp`, and `user_badges` tables. Add a new API route `GET /admin/users-progress` that returns this data.
+
+---
+
+## SECTION 11 — CONTEXT AND STATE UPDATES
+
+### 11a. Extend UserContext
+
+Extend `UserContext.tsx` to also expose:
+- `onboarding: OnboardingRecord | null` — fetched from `GET /user/onboarding` on mount
+- `xpData: { totalXp, level, levelName, xpToNextLevel }` — fetched from `GET /gamification/status`
+- `badges: BadgeWithEarnedStatus[]` — fetched from `GET /gamification/badges`
+- `checkInHistory: CheckInRecord[]` — fetched from `GET /user/checkin-history`
+- `completeWorkoutWithRitual: (workoutId: number) => Promise<CompletionResult>` — calls `POST /user/progress` and returns the full enriched response including `newBadges`, `xpEarned`, `newLevel`
+
+All of these are available via `useUser()` throughout the app.
+
+### 11b. Optimistic XP Updates
+
+When `completeWorkoutWithRitual` is called, immediately (before the API responds) increment the XP display by 10 in the local `xpData` state. When the real response arrives, reconcile with the actual server value. This prevents any lag in the XP counter.
+
+---
+
+## SECTION 12 — VISUAL POLISH
+
+### 12a. Color tokens — ensure consistency
+
+In `index.css`, confirm the following custom tokens exist and are used consistently. Add any that are missing:
+- `--color-navy: #1B2A4A`
+- `--color-orange: #E8734A`
+- `--color-sand: #F5F0E8`
+- `--color-sand-dark: #EDE8DF`
+- `--color-charcoal: #2D3748`
+- `--color-success: #22C55E`
+- `--color-amber: #F59E0B`
+
+### 12b. Loading skeletons
+
+Every section that fetches data — the Weekly Drop prescription card, the Labs workout grid, the Shop product grid, the AI Coach response area — must show a skeleton loader while fetching. Use the existing `Skeleton` component from `components/ui/skeleton.tsx`. The skeleton must match the shape of the real content: a tall rounded rectangle for workout cards, smaller rectangles for metadata lines.
+
+### 12c. Page transitions
+
+All tab switches in `MobileApp` must animate. When switching tabs, the incoming tab fades in over 200ms using a CSS animation `@keyframes fadeSlideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`. Apply this to each tab content wrapper div with `animation: fadeSlideIn 0.2s ease-out`.
+
+---
+
+## SECTION 13 — API CLIENT REGENERATION
+
+After all new routes are added to the API server, regenerate the API client types in `lib/api-zod/` to include all new endpoints. All new routes must have proper Zod request/response schemas defined in the route files. The generated client hooks must be available via `@workspace/api-client-react` for use in the frontend.
+
+---
+
+## FINAL REQUIREMENTS
+
+- Every new database table must have a corresponding Zod schema and TypeScript type exported from `lib/api-zod/src/generated/types/`
+- All new API routes must handle errors with appropriate HTTP status codes and `{ error: string }` JSON bodies
+- No new npm packages may be added unless strictly necessary. Use existing dependencies: Tailwind, shadcn/ui, Drizzle, React Query, Gemini AI, Zod, Express
+- All AI prompts must end with: "Do not use asterisks or markdown formatting."
+- The app must remain fully functional as a mobile-first single-page app within the `max-w-md` container
+- The admin panel must remain accessible at `/admin` and all existing admin functionality must continue to work
+- All existing functionality — favorites, wishlist, weekly schedule, product shop, AI Concierge, AI Instructor Mode — must continue to work without regression
