@@ -235,7 +235,7 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
           <span className="text-xs text-gray-500 font-medium">Week of {getStartDateDisplay()}</span>
         </div>
 
-        <div className="flex justify-between px-4 mb-6 overflow-x-auto no-scrollbar">
+        <div className="flex justify-between px-4 mb-6 overflow-x-auto no-scrollbar py-1">
           {DAYS.map((day, idx) => {
             const isToday = idx === todayIndex;
             const isDone = idx < todayIndex;
