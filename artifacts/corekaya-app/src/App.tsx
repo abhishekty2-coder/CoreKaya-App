@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useGetWorkout } from "@workspace/api-client-react";
 
-import { UserProvider, useUser } from "./context/UserContext";
+import { UserProvider, useUser, type CompletionResult } from "./context/UserContext";
 import { Navigation } from "./components/Navigation";
 import { HomeTab } from "./pages/HomeTab";
 import { LabsTab } from "./pages/LabsTab";
@@ -12,6 +13,7 @@ import { ShopTab } from "./pages/ShopTab";
 import { AiCoachTab } from "./pages/AiCoachTab";
 import { Player } from "./pages/Player";
 import { ProfilePage } from "./pages/ProfilePage";
+import { PostWorkoutRitual } from "./pages/PostWorkoutRitual";
 import { Onboarding } from "./pages/Onboarding";
 import { BreathingInterstitial } from "./pages/BreathingInterstitial";
 
@@ -33,36 +35,61 @@ const queryClient = new QueryClient({
 });
 
 type Tab = "home" | "labs" | "shop" | "ai" | "profile";
-type PageState = "main" | "player" | "breathing";
+type PageState = "main" | "player" | "breathing" | "ritual";
+
+function PostWorkoutRitualWrapper({
+  workoutId,
+  completionData,
+  tomorrowWorkout,
+  onClose,
+}: {
+  workoutId: number;
+  completionData: CompletionResult;
+  tomorrowWorkout: any;
+  onClose: () => void;
+}) {
+  const { data: workout } = useGetWorkout(workoutId);
+  if (!workout) return null;
+  return (
+    <PostWorkoutRitual
+      workout={workout}
+      completionData={completionData}
+      tomorrowWorkout={tomorrowWorkout ?? null}
+      onClose={onClose}
+    />
+  );
+}
 
 function MobileApp() {
   const [activeTab, setActiveTab] = useState<Tab>("home");
   const [currentPage, setCurrentPage] = useState<PageState>("main");
   const [workoutIdToPlay, setWorkoutIdToPlay] = useState<number | null>(null);
   const [pendingWorkoutId, setPendingWorkoutId] = useState<number | null>(null);
-  const { onboarding, isOnboardingLoading } = useUser();
+  const [completionResult, setCompletionResult] = useState<CompletionResult | null>(null);
+
+  const { onboarding, isOnboardingLoading, schedule } = useUser();
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  /* FIX 8 — check localStorage before showing onboarding */
   useEffect(() => {
+    if (localStorage.getItem('ck_onboarded') === '1') return;
     if (!isOnboardingLoading && onboarding && !onboarding.isComplete) {
       setShowOnboarding(true);
     }
   }, [isOnboardingLoading, onboarding]);
+
+  /* FIX 7 — tomorrowWorkout from schedule in UserContext */
+  const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
+  const dayWorkoutKeys = ['monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout', 'sunWorkout'] as const;
+  const tomorrowWorkout = schedule ? (schedule as any)[dayWorkoutKeys[(todayIndex + 1) % 7]] ?? null : null;
 
   const handlePlayWorkout = (id: number) => {
     setPendingWorkoutId(id);
     setCurrentPage("breathing");
   };
 
+  /* FIX 14 — both onComplete and onSkip call the same handler */
   const handleBreathingComplete = () => {
-    if (pendingWorkoutId !== null) {
-      setWorkoutIdToPlay(pendingWorkoutId);
-      setPendingWorkoutId(null);
-    }
-    setCurrentPage("player");
-  };
-
-  const handleBreathingSkip = () => {
     if (pendingWorkoutId !== null) {
       setWorkoutIdToPlay(pendingWorkoutId);
       setPendingWorkoutId(null);
@@ -75,21 +102,26 @@ function MobileApp() {
     setWorkoutIdToPlay(null);
   };
 
-  const handleCompleteWorkout = () => {
-    setCurrentPage("main");
-    setWorkoutIdToPlay(null);
+  /* FIX 7 — accept CompletionResult from Player and show ritual */
+  const handleCompleteWorkout = (result: CompletionResult) => {
+    setCompletionResult(result);
+    setCurrentPage("ritual");
   };
 
   const handleOnboardingComplete = () => {
     setShowOnboarding(false);
   };
 
+  const handleRitualClose = () => {
+    setCurrentPage("main");
+    setWorkoutIdToPlay(null);
+    setCompletionResult(null);
+  };
+
   if (isOnboardingLoading) {
     return (
       <div className="bg-navy min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-6 h-6 border-2 border-orange border-t-transparent rounded-full animate-spin" />
-        </div>
+        <div className="w-6 h-6 border-2 border-orange border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -101,31 +133,50 @@ function MobileApp() {
   return (
     <div className="bg-gray-100 min-h-screen">
       <div className="max-w-md mx-auto bg-white min-h-screen shadow-2xl relative overflow-hidden">
+
         {currentPage === "breathing" && (
-          <BreathingInterstitial onComplete={handleBreathingComplete} onSkip={handleBreathingSkip} />
+          <BreathingInterstitial
+            onComplete={handleBreathingComplete}
+            onSkip={handleBreathingComplete}
+          />
         )}
-        {currentPage === "player" && workoutIdToPlay !== null ? (
+
+        {currentPage === "player" && workoutIdToPlay !== null && (
           <Player
             workoutId={workoutIdToPlay}
             onBack={handleClosePlayer}
             onComplete={handleCompleteWorkout}
           />
-        ) : currentPage === "main" ? (
+        )}
+
+        {currentPage === "ritual" && workoutIdToPlay !== null && completionResult !== null && (
+          <PostWorkoutRitualWrapper
+            workoutId={workoutIdToPlay}
+            completionData={completionResult}
+            tomorrowWorkout={tomorrowWorkout}
+            onClose={handleRitualClose}
+          />
+        )}
+
+        {currentPage === "main" && (
           <>
-            {activeTab === "home" && (
-              <HomeTab
-                onPlayWorkout={handlePlayWorkout}
-                onBrowseLabs={() => setActiveTab("labs")}
-              />
-            )}
-            {activeTab === "labs" && <LabsTab onPlayWorkout={handlePlayWorkout} />}
-            {activeTab === "shop" && <ShopTab />}
-            {activeTab === "ai" && <AiCoachTab onPlayWorkout={handlePlayWorkout} />}
-            {activeTab === "profile" && <ProfilePage />}
+            {/* FIX 2 — key forces remount on tab change, triggering CSS animation */}
+            <div key={activeTab} style={{ animation: 'fadeSlideIn 0.2s ease-out' }}>
+              {activeTab === "home" && (
+                <HomeTab
+                  onPlayWorkout={handlePlayWorkout}
+                  onBrowseLabs={() => setActiveTab("labs")}
+                />
+              )}
+              {activeTab === "labs" && <LabsTab onPlayWorkout={handlePlayWorkout} />}
+              {activeTab === "shop" && <ShopTab />}
+              {activeTab === "ai" && <AiCoachTab onPlayWorkout={handlePlayWorkout} />}
+              {activeTab === "profile" && <ProfilePage />}
+            </div>
 
             <Navigation activeTab={activeTab} onTabChange={(tab) => setActiveTab(tab as Tab)} />
           </>
-        ) : null}
+        )}
       </div>
     </div>
   );
@@ -145,29 +196,13 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={MobileApp} />
-
-      <Route path="/admin">
-        <ProtectedRoute component={AdminOverview} />
-      </Route>
-      <Route path="/admin/overview">
-        <ProtectedRoute component={AdminOverview} />
-      </Route>
-      <Route path="/admin/workouts">
-        <ProtectedRoute component={AdminWorkouts} />
-      </Route>
-      <Route path="/admin/products">
-        <ProtectedRoute component={AdminProducts} />
-      </Route>
-      <Route path="/admin/quotes">
-        <ProtectedRoute component={AdminQuotes} />
-      </Route>
-      <Route path="/admin/schedule">
-        <ProtectedRoute component={AdminSchedule} />
-      </Route>
-      <Route path="/admin/gamification">
-        <ProtectedRoute component={AdminGamification} />
-      </Route>
-
+      <Route path="/admin"><ProtectedRoute component={AdminOverview} /></Route>
+      <Route path="/admin/overview"><ProtectedRoute component={AdminOverview} /></Route>
+      <Route path="/admin/workouts"><ProtectedRoute component={AdminWorkouts} /></Route>
+      <Route path="/admin/products"><ProtectedRoute component={AdminProducts} /></Route>
+      <Route path="/admin/quotes"><ProtectedRoute component={AdminQuotes} /></Route>
+      <Route path="/admin/schedule"><ProtectedRoute component={AdminSchedule} /></Route>
+      <Route path="/admin/gamification"><ProtectedRoute component={AdminGamification} /></Route>
       <Route component={NotFound} />
     </Switch>
   );

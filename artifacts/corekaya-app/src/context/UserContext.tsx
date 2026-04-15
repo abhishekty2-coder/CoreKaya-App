@@ -3,82 +3,58 @@ import {
   useGetUserFavorites,
   useGetUserWishlist,
   useGetUserProgress,
+  useGetCurrentSchedule,
   useToggleFavoriteWorkout,
   useToggleWishlistProduct,
   getGetUserFavoritesQueryKey,
   getGetUserWishlistQueryKey,
   getGetUserProgressQueryKey,
+  type Schedule,
 } from '@workspace/api-client-react';
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const SESSION_ID = 'session-default';
 const API_BASE = '/api';
 
-const headers = () => ({ 'Content-Type': 'application/json', 'x-session-id': SESSION_ID });
-
-async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: { ...headers(), ...(opts?.headers ?? {}) } });
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
+const apiFetch = async (path: string, opts?: RequestInit) => {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'x-session-id': SESSION_ID, ...(opts?.headers ?? {}) },
+  });
+  if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
+};
+
+export interface BadgeRecord {
+  id: number; slug: string; name: string; description: string; iconEmoji: string;
+  xpReward: number; unlockConditionType: string; unlockConditionValue: number;
+  earned: boolean; earnedAt: Date | null;
 }
 
-interface BadgeRecord {
-  id: number;
-  slug: string;
-  name: string;
-  description: string;
-  iconEmoji: string;
-  xpReward: number;
-  unlockConditionType: string;
-  unlockConditionValue: number;
-  earned: boolean;
-  earnedAt: Date | null;
+export interface XpData {
+  totalXp: number; level: number; levelName: string;
+  xpToNextLevel: number; nextLevelXp: number | null; currentLevelMinXp: number;
 }
 
-interface XpData {
-  totalXp: number;
-  level: number;
-  levelName: string;
-  xpToNextLevel: number;
-  nextLevelXp: number | null;
-  currentLevelMinXp: number;
+export interface CheckInRecord {
+  id: number; sessionId: string; workoutId: number; feeling: string;
+  checkedInAt: Date; workoutTitle?: string | null;
 }
 
-interface CheckInRecord {
-  id: number;
-  sessionId: string;
-  workoutId: number;
-  feeling: string;
-  checkedInAt: Date;
-  workoutTitle?: string | null;
+export interface OnboardingRecord {
+  id?: number; sessionId?: string; goal?: string | null;
+  experienceLevel?: string | null; equipmentOwned?: string[] | null;
+  daysPerWeek?: number | null; isComplete: boolean;
 }
 
-interface OnboardingRecord {
-  id?: number;
-  sessionId?: string;
-  goal?: string | null;
-  experienceLevel?: string | null;
-  equipmentOwned?: string[] | null;
-  daysPerWeek?: number | null;
-  isComplete: boolean;
-}
-
-interface CompletionResult {
-  streak: number;
-  completedWorkouts: number[];
-  newBadges: BadgeRecord[];
-  xpEarned: number;
-  newLevel: string | null;
-  totalXp: number;
+export interface CompletionResult {
+  streak: number; completedWorkouts: number[]; newBadges: BadgeRecord[];
+  xpEarned: number; newLevel: string | null; totalXp: number; prevStreak?: number;
 }
 
 interface UserState {
-  streak: number;
-  favorites: number[];
-  wishlist: number[];
-  completedWorkouts: number[];
-  isPremium: boolean;
-  name: string;
+  streak: number; favorites: number[]; wishlist: number[];
+  completedWorkouts: number[]; isPremium: boolean; name: string;
 }
 
 interface UserContextType {
@@ -87,6 +63,7 @@ interface UserContextType {
   xpData: XpData;
   badges: BadgeRecord[];
   checkInHistory: CheckInRecord[];
+  schedule: Schedule | null;
   isOnboardingLoading: boolean;
   toggleFavoriteWorkout: (workoutId: number) => void;
   toggleWishlistProduct: (productId: number) => void;
@@ -111,6 +88,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { data: favoritesData } = useGetUserFavorites();
   const { data: wishlistData } = useGetUserWishlist();
   const { data: progressData } = useGetUserProgress();
+  const { data: scheduleData } = useGetCurrentSchedule();
 
   const toggleFavMutation = useToggleFavoriteWorkout();
   const toggleWishlistMutation = useToggleWishlistProduct();
@@ -119,17 +97,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     queryKey: ['user-onboarding'],
     queryFn: () => apiFetch('/user/onboarding'),
   });
-
   const { data: xpRaw, refetch: refetchXp } = useQuery({
     queryKey: ['gamification-status'],
     queryFn: () => apiFetch('/gamification/status'),
   });
-
   const { data: badgesRaw, refetch: refetchBadges } = useQuery({
     queryKey: ['gamification-badges'],
     queryFn: () => apiFetch('/gamification/badges'),
   });
-
   const { data: checkinsRaw, refetch: refetchCheckins } = useQuery({
     queryKey: ['user-checkin-history'],
     queryFn: () => apiFetch('/user/checkin-history'),
@@ -148,6 +123,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
   const badges: BadgeRecord[] = badgesRaw?.badges ?? [];
   const checkInHistory: CheckInRecord[] = checkinsRaw?.history ?? [];
+  const schedule: Schedule | null = scheduleData ?? null;
 
   const userState: UserState = {
     streak: progressData?.streak ?? 0,
@@ -188,33 +164,30 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!old) return { streak: 1, completedWorkouts: [workoutId], lastWorkoutDate: new Date().toISOString() };
       return { ...old, streak: (old.streak ?? 0) + 1, completedWorkouts: [...(old.completedWorkouts ?? []), workoutId] };
     });
-    setLocalXp(prev => (prev ?? xpData.totalXp) + 10);
     apiFetch('/user/progress', { method: 'POST', body: JSON.stringify({ workoutId }) })
-      .then((data) => {
+      .then(() => {
         queryClient.invalidateQueries({ queryKey: getGetUserProgressQueryKey() });
         refetchXp();
         refetchBadges();
-        setLocalXp(null);
       })
-      .catch(() => {
-        queryClient.setQueryData(getGetUserProgressQueryKey(), prev);
-        setLocalXp(null);
-      });
+      .catch(() => queryClient.setQueryData(getGetUserProgressQueryKey(), prev));
   };
 
   const completeWorkoutWithRitual = useCallback(async (workoutId: number): Promise<CompletionResult> => {
-    setLocalXp(prev => (prev ?? xpData.totalXp) + 10);
+    const prevStreak = progressData?.streak ?? 0;
+    setLocalXp(prev => (prev ?? (xpRaw?.totalXp ?? 0)) + 10);
     const data = await apiFetch('/user/progress', { method: 'POST', body: JSON.stringify({ workoutId }) });
     queryClient.invalidateQueries({ queryKey: getGetUserProgressQueryKey() });
     refetchXp();
     refetchBadges();
     refetchCheckins();
     setLocalXp(null);
-    return data as CompletionResult;
-  }, [xpData.totalXp]);
+    return { ...data, prevStreak } as CompletionResult;
+  }, [progressData?.streak, xpRaw?.totalXp]);
 
   const saveOnboarding = async (formData: { goal: string; experienceLevel: string; equipmentOwned: string[]; daysPerWeek: number }) => {
     await apiFetch('/user/onboarding', { method: 'POST', body: JSON.stringify(formData) });
+    localStorage.setItem('ck_onboarded', '1');
     queryClient.invalidateQueries({ queryKey: ['user-onboarding'] });
     refetchOnboarding();
   };
@@ -224,28 +197,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     refetchCheckins();
   };
 
-  const isWorkoutFavorite = (workoutId: number) => userState.favorites.includes(workoutId);
-  const isProductInWishlist = (productId: number) => userState.wishlist.includes(productId);
-
   return (
     <UserContext.Provider value={{
-      userState,
-      onboarding,
-      xpData,
-      badges,
-      checkInHistory,
-      isOnboardingLoading,
-      toggleFavoriteWorkout,
-      toggleWishlistProduct,
-      isWorkoutFavorite,
-      isProductInWishlist,
-      completeWorkout,
-      completeWorkoutWithRitual,
-      saveOnboarding,
-      submitCheckin,
-      refetchXp,
-      refetchBadges,
-      refetchCheckins,
+      userState, onboarding, xpData, badges, checkInHistory, schedule, isOnboardingLoading,
+      toggleFavoriteWorkout, toggleWishlistProduct,
+      isWorkoutFavorite: (id) => userState.favorites.includes(id),
+      isProductInWishlist: (id) => userState.wishlist.includes(id),
+      completeWorkout, completeWorkoutWithRitual, saveOnboarding, submitCheckin,
+      refetchXp, refetchBadges, refetchCheckins,
     }}>
       {children}
     </UserContext.Provider>
@@ -253,7 +212,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 };
 
 export const useUser = () => {
-  const context = useContext(UserContext);
-  if (context === undefined) throw new Error('useUser must be used within a UserProvider');
-  return context;
+  const ctx = useContext(UserContext);
+  if (!ctx) throw new Error('useUser must be used within a UserProvider');
+  return ctx;
 };

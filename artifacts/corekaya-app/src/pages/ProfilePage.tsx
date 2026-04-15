@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useUser } from '../context/UserContext';
+import { useUser, type CheckInRecord } from '../context/UserContext';
 import { BadgesPage } from './BadgesPage';
 
 const LEVEL_THRESHOLDS = [
@@ -17,6 +17,30 @@ const FEELING_COLOR: Record<string, string> = {
   tough: '#EF4444',
 };
 const FEELING_EMOJI: Record<string, string> = { easy: '😌', good: '💪', tough: '🔥' };
+
+/* FIX 13 — best streak calculation from check-in history */
+function calcBestStreak(history: CheckInRecord[]): number {
+  if (history.length === 0) return 0;
+  const sorted = [...history].sort(
+    (a, b) => new Date(a.checkedInAt as unknown as string).getTime() - new Date(b.checkedInAt as unknown as string).getTime()
+  );
+  let best = 1;
+  let current = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1].checkedInAt as unknown as string);
+    const cur  = new Date(sorted[i].checkedInAt as unknown as string);
+    prev.setHours(0, 0, 0, 0);
+    cur.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((cur.getTime() - prev.getTime()) / 86400000);
+    if (diffDays === 1) {
+      current += 1;
+      if (current > best) best = current;
+    } else if (diffDays > 1) {
+      current = 1;
+    }
+  }
+  return best;
+}
 
 /* Circular arc progress ring */
 const ArcRing: React.FC<{ pct: number; size?: number }> = ({ pct, size = 120 }) => {
@@ -55,6 +79,9 @@ export function ProfilePage() {
   const earnedBadges = badges.filter(b => b.earned);
   const nextBadge    = badges.find(b => !b.earned);
 
+  /* FIX 13 — best streak */
+  const bestStreak = calcBestStreak(checkInHistory);
+
   /* Streak calendar – last 7 days */
   const DAY3 = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -77,8 +104,11 @@ export function ProfilePage() {
   const formatDate = (v: unknown) =>
     new Date(v as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
+  /* FIX 1 — skeleton when data not yet loaded */
+  const isInitialLoading = xpData.totalXp === 0 && checkInHistory.length === 0;
+
   return (
-    <div className="min-h-screen bg-sand pb-28 animate-[fadeSlideIn_0.2s_ease-out]">
+    <div className="min-h-screen bg-sand pb-28" style={{ animation: 'fadeSlideIn 0.2s ease-out' }}>
       {showBadges && <BadgesPage onClose={() => setShowBadges(false)} />}
 
       {/* ── HERO ─────────────────────────────────────────────── */}
@@ -86,13 +116,9 @@ export function ProfilePage() {
         className="relative overflow-hidden px-6 pt-12 pb-10 text-center"
         style={{ background: 'linear-gradient(160deg, #0F1E38 0%, #1B2A4A 55%, #2D4A7A 100%)' }}
       >
-        {/* decorative glow */}
         <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full blur-3xl"
              style={{ background: 'radial-gradient(circle, rgba(232,115,74,0.18) 0%, transparent 70%)' }} />
-        <div className="absolute bottom-0 left-0 w-32 h-32 rounded-full blur-2xl"
-             style={{ background: 'radial-gradient(circle, rgba(45,74,122,0.6) 0%, transparent 70%)' }} />
 
-        {/* Arc + avatar */}
         <div className="relative inline-flex items-center justify-center mb-4">
           <ArcRing pct={progressPct} size={128} />
           <div className="absolute w-16 h-16 rounded-full bg-orange flex items-center justify-center shadow-lg">
@@ -107,7 +133,6 @@ export function ProfilePage() {
           </span>
         </div>
 
-        {/* XP micro-progress */}
         <div className="mx-auto max-w-[200px]">
           <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
             <div
@@ -122,12 +147,11 @@ export function ProfilePage() {
           </p>
         </div>
 
-        {/* Quick stats row */}
         <div className="flex justify-center gap-6 mt-6">
           {[
-            { label: 'Sessions',  value: userState.completedWorkouts.length },
-            { label: 'Streak',    value: `${userState.streak}🔥`           },
-            { label: 'This Week', value: thisWeekCount                      },
+            { label: 'Sessions',    value: userState.completedWorkouts.length },
+            { label: 'Streak',      value: `${userState.streak}🔥`           },
+            { label: 'Best Streak', value: `${bestStreak}🏆`                  },
           ].map((s, i) => (
             <div key={i} className="flex flex-col items-center">
               <span className="text-white font-bold text-xl leading-none">{s.value}</span>
@@ -138,6 +162,14 @@ export function ProfilePage() {
       </div>
 
       <div className="px-5 pt-5 space-y-4">
+
+        {/* FIX 1 — skeleton while XP not yet loaded */}
+        {isInitialLoading && (
+          <>
+            <div className="h-20 rounded-xl bg-gray-200 animate-pulse" />
+            <div className="h-24 rounded-xl bg-gray-200 animate-pulse" />
+          </>
+        )}
 
         {/* ── STREAK CALENDAR ──────────────────────────────── */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
@@ -150,9 +182,7 @@ export function ProfilePage() {
               <div key={i} className="flex flex-col items-center flex-1 gap-1">
                 <div
                   className={`w-full aspect-square rounded-xl transition-all duration-300 flex items-center justify-center
-                    ${d.done
-                      ? 'bg-orange shadow-sm'
-                      : 'bg-gray-100'}`}
+                    ${d.done ? 'bg-orange shadow-sm' : 'bg-gray-100'}`}
                 >
                   {d.done && (
                     <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -277,30 +307,38 @@ export function ProfilePage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {checkInHistory.slice(0, 10).map(c => (
-                <div key={c.id} className="flex items-center gap-3">
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
-                    style={{ background: `${FEELING_COLOR[c.feeling]}18` }}
-                  >
-                    {FEELING_EMOJI[c.feeling] || '🏃'}
+              {checkInHistory.slice(0, 10).map(c => {
+                /* FIX 6 — how many times user has done this workout */
+                const timesCompleted = checkInHistory.filter(h => h.workoutId === c.workoutId).length;
+                return (
+                  <div key={c.id} className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                      style={{ background: `${FEELING_COLOR[c.feeling] || '#E5E7EB'}18` }}
+                    >
+                      {FEELING_EMOJI[c.feeling] || '🏃'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-charcoal truncate">
+                        {c.workoutTitle || `Workout #${c.workoutId}`}
+                      </p>
+                      <p className="text-[11px] text-gray-400">
+                        {FEELING_LABEL[c.feeling] || 'Completed'} · {formatDate(c.checkedInAt)}
+                      </p>
+                    </div>
+                    {/* FIX 6 — completion count */}
+                    <span className="text-[11px] text-gray-400 flex-shrink-0 font-medium">
+                      ×{timesCompleted}
+                    </span>
+                    <div
+                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
+                      style={{ color: FEELING_COLOR[c.feeling] || '#6B7280', background: `${FEELING_COLOR[c.feeling] || '#6B7280'}18` }}
+                    >
+                      {FEELING_LABEL[c.feeling] || '—'}
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-charcoal truncate">
-                      {c.workoutTitle || `Workout #${c.workoutId}`}
-                    </p>
-                    <p className="text-[11px] text-gray-400">
-                      {FEELING_LABEL[c.feeling] || 'Completed'} · {formatDate(c.checkedInAt)}
-                    </p>
-                  </div>
-                  <div
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={{ color: FEELING_COLOR[c.feeling], background: `${FEELING_COLOR[c.feeling]}18` }}
-                  >
-                    {FEELING_LABEL[c.feeling]}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

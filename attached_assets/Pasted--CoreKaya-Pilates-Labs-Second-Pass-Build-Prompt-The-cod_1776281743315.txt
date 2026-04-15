@@ -1,0 +1,146 @@
+# CoreKaya Pilates Labs — Second Pass Build Prompt
+
+The codebase is a React + Express + Drizzle + Gemini monorepo. Everything from the first build pass is in place: gamification schema, XP/badge engine, onboarding flow, PostWorkoutRitual, BreathingInterstitial, ProfilePage, BadgesPage, FlameSVG, streak shields, EmptyState component, AdminGamification page, all API routes including check-in, debrief, onboarding, and shield. Do not touch or rebuild any of that.
+
+This prompt addresses exactly what remains incomplete. Build each section below in full. Do not ask for clarification. Do not skip anything.
+
+---
+
+## FIX 1 — Skeleton loaders throughout the app
+
+In `HomeTab.tsx`, the `workoutsLoading` flag is captured but no skeleton UI is shown. Add this: when `workoutsLoading` is true, replace the Today's Prescription card area with a skeleton block that is 220px tall, `rounded-xl`, `bg-gray-200`, animated with a subtle `animate-pulse` class. Replace the Favorite Classes horizontal scroll area with two side-by-side skeleton cards, each 160px wide and 200px tall, `rounded-xl`, `animate-pulse`, `bg-gray-200`.
+
+In `LabsTab.tsx`, while the workouts list is loading, replace the workout card grid with a column of 4 skeleton cards — each `h-[200px] rounded-xl bg-gray-200 animate-pulse mb-4 mx-6`.
+
+In `ProfilePage.tsx`, while `checkInHistory` is empty and `xpData.totalXp === 0`, show a skeleton version of the XP card (full-width, `h-20`, `rounded-xl`, `bg-gray-200`, `animate-pulse`) and a skeleton for the body feel chart (`h-24`, `rounded-xl`, `bg-gray-200`, `animate-pulse`).
+
+In `AiCoachTab.tsx`, while the AI response is loading (after "Ask Coach" or "Generate Session Plan" is tapped), show a skeleton block of 3 lines — widths 100%, 80%, 60%, each `h-4 rounded bg-gray-200 animate-pulse mb-2` — inside the response area. This replaces any existing spinner-only loading state.
+
+---
+
+## FIX 2 — Tab transition animation
+
+In `App.tsx` inside `MobileApp`, the tab switching renders each tab as a direct conditional block with no animation. Replace the tab content rendering with this pattern:
+
+Wrap each tab content div in a container div that receives a key equal to `activeTab`. Apply an inline style: `animation: fadeSlideIn 0.2s ease-out`. Add the keyframe definition to `index.css`:
+
+```css
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+```
+
+Because React reconciles keyed elements, changing `activeTab` destroys the old div and mounts a new one, triggering the animation on every tab switch without any state management. Apply this to the `HomeTab`, `LabsTab`, `ShopTab`, `AiCoachTab`, and `ProfilePage` wrappers.
+
+---
+
+## FIX 3 — Weekly Drop day rings: full dynamic arc implementation
+
+In `HomeTab.tsx`, the day completion rings currently use a hardcoded `strokeDasharray="138.2 0"` which shows a full ring on every completed day regardless. Replace the day ring rendering with a dynamic calculation.
+
+For each day that is `isDone` (completed), compute the arc based on whether the day had a scheduled workout assigned. A day with a workout assigned and marked done gets a full orange ring (`strokeDasharray` = full circumference = `2 * Math.PI * 22` ≈ `"138.2 0"`). A rest day (no workout assigned in the schedule for that day) gets no ring at all — just the checkmark dot. The today day gets the navy filled circle with no ring.
+
+Pass the weekly schedule data down to the day row renderer. For each day index `idx`, check if `schedule[dayWorkoutKeys[idx]]` is non-null to determine if it's a workout day. Days that are `isDone` and had a workout get the orange ring. Days that are `isDone` but had no workout (rest day) show the checkmark dot with a light gray ring at 100% (`stroke="#E5E7EB"`). Future days show no ring.
+
+---
+
+## FIX 4 — AI Coach Instructor Mode: Recommended workouts from The Labs
+
+In `AiCoachTab.tsx`, the session plan generator calls `POST /ai/session-plan` and displays the text result. After the plan text renders, fetch and display matching workouts.
+
+Add this logic: after `sessionPlan` text is set (non-empty), call `GET /workouts` using the existing `useListWorkouts` hook (already imported in the workspace). Filter the result to workouts that match the selected apparatus. If the selected equipment array includes `'Reformer'`, filter for `category === 'Reformer Lab'`. If it includes `'Mat'`, filter for `category === 'Mat Lab'`. Take the first 3 results.
+
+Below the session plan text output, add a new section with a heading `"Recommended from The Labs"` in serif 16px text. Render up to 3 `WorkoutCard` components from the filtered list. The `WorkoutCard` already accepts `onClick` and `workout` props. Pass `onPlayWorkout` (already threaded into `AiCoachTab` as a prop) as the `onClick` handler for each card. If no matching workouts are found, show nothing (no empty state needed here).
+
+---
+
+## FIX 5 — Labs filter bar: sticky with elevation on scroll
+
+In `LabsTab.tsx`, the category filter pill row is inside the page `<header>` which is already `sticky top-0`. This is correct but the filter pills themselves scroll off when inside the page body rather than the sticky header.
+
+Move the category filter pill row (`<div className="flex gap-2 overflow-x-auto ...">`) out of the scrollable content area and into the sticky header block. The sticky header should contain: title, subtitle, and filter pills. The workout grid scrolls below it. The sticky header should gain a thin `border-b border-gray-100` and `backdrop-blur-sm bg-white/95` when it is stuck — detect this using an `IntersectionObserver` on a sentinel div placed directly above the sticky header. When the sentinel leaves the viewport, add a shadow class `shadow-sm` to the header via a state boolean `isStuck`. When it re-enters, remove it.
+
+The implementation: add a `<div ref={sentinelRef} className="h-px" />` immediately before the sticky header. Use `useEffect` to create an `IntersectionObserver` on `sentinelRef.current` with `threshold: 0`. When `isIntersecting` is false, `setIsStuck(true)`. When true, `setIsStuck(false)`. Apply `${isStuck ? 'shadow-sm bg-white/95 backdrop-blur-sm' : 'bg-white'}` to the sticky header's className.
+
+---
+
+## FIX 6 — Profile Page: "People Practicing" count on Workout History rows
+
+In `ProfilePage.tsx`, the workout history list shows the last 10 check-ins. Currently it shows workout title, date, and feeling emoji. Add one more element per row: a small muted label showing how many times this specific workout appears in `checkInHistory` (i.e., how many times the user has done it). Format as `"×3"` in 11px muted text to the right of the feeling emoji. Calculate this inline: `checkInHistory.filter(c => c.workoutId === entry.workoutId).length`.
+
+---
+
+## FIX 7 — Post-Workout Ritual: wire completionData from App.tsx
+
+In `App.tsx`, `handleCompleteWorkout` is called by `Player`. The `PostWorkoutRitual` needs `completionData` (streak, prevStreak, xpEarned, totalXp, newLevel, newBadges) but currently in `App.tsx`, `handleCompleteWorkout` likely receives nothing from `Player` or does not store completion results.
+
+Modify the flow:
+
+In `Player.tsx`, `handleComplete` calls `completeWorkout.mutate`. Change this to call `completeWorkoutWithRitual(workoutId)` from `useUser()` instead. This returns a `Promise<CompletionResult>`. On success, call `onComplete(result)` passing the result up. Update the `PlayerProps` interface: `onComplete: (result: CompletionResult) => void`.
+
+In `App.tsx`, update `handleCompleteWorkout` to accept `(result: CompletionResult)`. Store this in a `useState<CompletionResult | null>` called `completionResult`. Set `currentPage` to `"ritual"` (add this as a new PageState). Render `PostWorkoutRitual` when `currentPage === "ritual"` and `completionResult !== null`.
+
+`PostWorkoutRitual` also needs `tomorrowWorkout`. In `App.tsx`, calculate tomorrow's workout from the schedule: `schedule[dayWorkoutKeys[(todayIndex + 1) % 7]]`. Pass it as the `tomorrowWorkout` prop. The schedule data needs to be fetched in `App.tsx` or passed through. The cleanest approach: move the `useGetCurrentSchedule()` call from `HomeTab` to the `UserContext`, expose it as `schedule`, and use it in both `HomeTab` (remove the duplicate call) and `App.tsx`.
+
+---
+
+## FIX 8 — Onboarding: ensure it does not show for returning sessions
+
+In `App.tsx`, `showOnboarding` is set to true if `onboarding.isComplete` is false. But a brand-new session where `onboarding` is `null` (API returns `{ isComplete: false }`) also triggers it. The issue: even after completing onboarding, if the `UserContext` re-fetches before the update lands, `isComplete` might briefly be false again.
+
+Fix this by adding a `localStorage` flag: when `saveOnboarding` completes successfully in `UserContext.tsx`, set `localStorage.setItem('ck_onboarded', '1')`. In `App.tsx`, before showing onboarding, check: `if (localStorage.getItem('ck_onboarded') === '1') return` — skip the onboarding regardless of API state. This ensures returning visitors never see the flow again even on cold load before the API responds.
+
+---
+
+## FIX 9 — HomeTab Daily Insight Card: fix loading state and error state
+
+In `HomeTab.tsx`, the `DailyInsightCard` component fetches from `/api/ai/wellness-tip`. Currently it shows nothing while loading (the `loading` state hides the card entirely). Replace this: while loading, show the card frame with a skeleton — same navy card background, with a `h-4 w-3/4 rounded bg-white/10 animate-pulse` skeleton line and a `h-4 w-1/2 rounded bg-white/10 animate-pulse mt-2` line below it. This prevents the layout shift when the text loads.
+
+If the fetch fails (catch block), show a fallback quote in the card: `"Movement is the medicine. Show up to your mat — the rest will follow."` styled in the same italic serif format. Do not leave the card empty on error.
+
+---
+
+## FIX 10 — Admin: add Gamification link to AdminLayout sidebar
+
+In `AdminLayout.tsx`, the sidebar navigation currently has links for Overview, Workouts, Products, Quotes, and Schedule. Add a new entry: `"Gamification"` with path `/admin/gamification`. Use a trophy icon or a star icon matching the existing SVG icon style used in the sidebar. In `App.tsx`, confirm the route `/admin/gamification` renders `<ProtectedRoute component={AdminGamification} />` — add it if missing.
+
+---
+
+## FIX 11 — WorkoutCard: show completion checkmark in Labs correctly
+
+In `LabsTab.tsx`, the `WorkoutCard` component receives a `completed` prop. Verify that the completion checkmark is passed: `completed={userState.completedWorkouts.includes(workout.id)}`. In `WorkoutCard.tsx`, if `completed` is true, show a small `w-6 h-6` circle in the top-right corner of the thumbnail with a checkmark SVG inside it. The circle is `bg-navy` with white text. Position it `absolute top-2 right-2 z-10`. The checkmark SVG: a simple `<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />` in white stroke. If `WorkoutCard` does not yet accept a `completed` prop, add it now.
+
+---
+
+## FIX 12 — Streak shield: initialize shield record on first session
+
+The `POST /user/streak-shield` route reads from `streak_shields` but never creates the initial record. If no shield record exists for the session, the route returns `{ used: false, shieldsRemaining: 0 }` — meaning new users never get their one free shield.
+
+Fix in `user.ts` route: before the shield check, run a get-or-create: if no shield record exists for this session, insert one with `shieldsAvailable: 1`. Then proceed with the existing read-and-decrement logic. Also fix the `GET /user/progress` response to include `shieldsAvailable` by joining with `streak_shields` — return `shieldsAvailable: shield?.shieldsAvailable ?? 1` in the progress response so the frontend knows whether to show the shield icon.
+
+---
+
+## FIX 13 — ProfilePage: best streak calculation
+
+In `ProfilePage.tsx`, the "Best streak" stat is referenced but likely shows `0` because it is not calculated from check-in history. Calculate the best streak from `checkInHistory`: sort the check-ins by `checkedInAt` ascending. Walk through consecutive days — whenever two adjacent check-ins are exactly 1 calendar day apart, increment the current streak counter. Track the maximum. Return the maximum. Implement this as a pure function `calcBestStreak(history: CheckInRecord[]): number` defined at the top of the file and call it in the render.
+
+---
+
+## FIX 14 — Breathing Interstitial: wire cancel properly
+
+In `BreathingInterstitial.tsx`, the "Skip →" button calls `onSkip`. Confirm that in `App.tsx`, both `onComplete` and `onSkip` from `BreathingInterstitial` call the same `handleBreathingComplete` function — they should both proceed to the player. If they currently call different handlers, unify them.
+
+---
+
+## FINAL CHECKS
+
+After all fixes are applied:
+
+1. Run `pnpm typecheck` across the monorepo. Fix any TypeScript errors introduced by the new prop signatures (especially `Player.tsx` `onComplete` type change and `PostWorkoutRitual` `completionData` type).
+
+2. Ensure `replit.md` is updated to reflect all new pages, routes, and schema tables added in both the first and second pass.
+
+3. The `DEFAULT_SESSION_ID = "session-default"` in all route files must remain as-is — do not replace it with authentication.
+
+4. Every `fetch` call in the frontend that calls `/api/...` must include the header `'x-session-id': 'session-default'` — audit `PostWorkoutRitual.tsx`, `HomeTab.tsx`, and `AiCoachTab.tsx` for any fetch calls missing this header and add it.

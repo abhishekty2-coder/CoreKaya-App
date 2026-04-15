@@ -14,16 +14,17 @@ interface WorkoutCardProps {
   locked?: boolean;
   lockReason?: string;
   showPeopleCount?: boolean;
+  completed?: boolean;
 }
 
 export const WorkoutCard: React.FC<WorkoutCardProps> = ({
-  workout, onClick, featured = false, locked = false, lockReason, showPeopleCount = false
+  workout, onClick, featured = false, locked = false, lockReason, showPeopleCount = false, completed
 }) => {
   const { userState } = useUser();
   const [touched, setTouched] = useState(false);
   const [showLockSheet, setShowLockSheet] = useState(false);
   const isHeavyEquipment = HEAVY_EQUIPMENT_CATEGORIES.includes(workout.category);
-  const isCompleted = userState.completedWorkouts.includes(workout.id);
+  const isCompleted = completed !== undefined ? completed : userState.completedWorkouts.includes(workout.id);
   const peopleCount = (workout.id * 7 + 13) % 40 + 5;
 
   const handleClick = () => {

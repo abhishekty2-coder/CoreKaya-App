@@ -96,10 +96,12 @@ router.get("/user/progress", async (req, res) => {
     const completedRows = await db.select().from(userCompletedWorkoutsTable)
       .where(eq(userCompletedWorkoutsTable.sessionId, sessionId));
     const uniqueWorkouts = [...new Set(completedRows.map((r) => r.workoutId))];
+    const [shield] = await db.select().from(streakShieldsTable).where(eq(streakShieldsTable.sessionId, sessionId));
     res.json({
       streak: state.streak,
       completedWorkouts: uniqueWorkouts,
       lastWorkoutDate: state.lastWorkoutDate,
+      shieldsAvailable: shield?.shieldsAvailable ?? 1,
     });
   } catch (err) {
     res.status(500).json({ error: "Failed to get progress" });
@@ -238,9 +240,15 @@ router.post("/user/onboarding", async (req, res) => {
 router.post("/user/streak-shield", async (req, res) => {
   try {
     const sessionId = (req.headers["x-session-id"] as string) || DEFAULT_SESSION_ID;
-    const [shield] = await db.select().from(streakShieldsTable).where(eq(streakShieldsTable.sessionId, sessionId));
+    let [shield] = await db.select().from(streakShieldsTable).where(eq(streakShieldsTable.sessionId, sessionId));
 
-    if (!shield || shield.shieldsAvailable <= 0) {
+    if (!shield) {
+      [shield] = await db.insert(streakShieldsTable)
+        .values({ sessionId, shieldsAvailable: 1 })
+        .returning();
+    }
+
+    if (shield.shieldsAvailable <= 0) {
       res.json({ used: false, shieldsRemaining: 0 });
       return;
     }

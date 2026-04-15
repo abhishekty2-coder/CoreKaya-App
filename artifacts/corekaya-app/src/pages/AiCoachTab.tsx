@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { useAskAiCoach, useGenerateSessionPlan, useGetWellnessTip } from '@workspace/api-client-react';
+import { useAskAiCoach, useGenerateSessionPlan, useGetWellnessTip, useListWorkouts } from '@workspace/api-client-react';
 import { Button } from '../components/Button';
+import { WorkoutCard } from '../components/WorkoutCard';
 
 type Mode = 'concierge' | 'instructor';
 
@@ -117,6 +118,19 @@ const renderPlanOutput = (text: string) => {
   });
 };
 
+/* FIX 1 — skeleton lines component */
+const SkeletonLines: React.FC<{ lines?: number }> = ({ lines = 3 }) => (
+  <div className="space-y-2 pt-2">
+    {Array.from({ length: lines }, (_, i) => (
+      <div
+        key={i}
+        className="h-4 rounded bg-gray-200 animate-pulse"
+        style={{ width: i === 0 ? '100%' : i === 1 ? '80%' : '60%' }}
+      />
+    ))}
+  </div>
+);
+
 interface AiCoachTabProps {
   onPlayWorkout?: (id: number) => void;
 }
@@ -137,6 +151,9 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
   const [sessionPlan, setSessionPlan] = useState<string | null>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
 
+  /* FIX 4 — fetch matching workouts after plan generates */
+  const { data: allWorkouts = [] } = useListWorkouts();
+
   const wellnessTipMutation = useGetWellnessTip();
   const askAiMutation = useAskAiCoach();
   const generatePlanMutation = useGenerateSessionPlan();
@@ -144,10 +161,7 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
   const handleGetDailyTip = async () => {
     setLoadingTip(true);
     wellnessTipMutation.mutate({ data: { mood: 'motivated', energy: 'moderate' } }, {
-      onSuccess: (res) => {
-        setTip(res.text);
-        setLoadingTip(false);
-      },
+      onSuccess: (res) => { setTip(res.text); setLoadingTip(false); },
       onError: () => setLoadingTip(false),
     });
   };
@@ -155,37 +169,37 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
   const handleAskConcierge = () => {
     if (!conciergeQuestion.trim()) return;
     setLoadingConcierge(true);
+    setConciergeAnswer('');
     askAiMutation.mutate({ data: { question: conciergeQuestion } }, {
-      onSuccess: (res) => {
-        setConciergeAnswer(res.text);
-        setLoadingConcierge(false);
-      },
+      onSuccess: (res) => { setConciergeAnswer(res.text); setLoadingConcierge(false); },
       onError: () => setLoadingConcierge(false),
     });
   };
 
   const toggleSelection = (item: string, list: string[], setList: (l: string[]) => void) => {
-    if (list.includes(item)) {
-      setList(list.filter(i => i !== item));
-    } else {
-      setList([...list, item]);
-    }
+    setList(list.includes(item) ? list.filter(i => i !== item) : [...list, item]);
   };
 
   const handleGeneratePlan = () => {
-    if (equipment.length === 0 || !mood) {
-      alert('Please select at least one piece of equipment and a session mood.');
-      return;
-    }
+    if (equipment.length === 0 || !mood) return;
     setLoadingPlan(true);
     generatePlanMutation.mutate({ data: { equipment, mood, issues, customNote } }, {
-      onSuccess: (res) => {
-        setSessionPlan(res.text);
-        setLoadingPlan(false);
-      },
+      onSuccess: (res) => { setSessionPlan(res.text); setLoadingPlan(false); },
       onError: () => setLoadingPlan(false),
     });
   };
+
+  /* FIX 4 — recommended workouts after plan */
+  const recommendedWorkouts = React.useMemo(() => {
+    if (!sessionPlan || allWorkouts.length === 0) return [];
+    const cats: string[] = [];
+    if (equipment.includes('Reformer') || equipment.includes('Reformer with Tower')) cats.push('Reformer Lab');
+    if (equipment.includes('Mat')) cats.push('Mat Lab');
+    if (equipment.includes('Full Cadillac')) cats.push('Cadillac Lab');
+    if (equipment.includes('Wunda Chair')) cats.push('Wunda Chair');
+    if (cats.length === 0) cats.push('Mat Lab', 'Reformer Lab');
+    return allWorkouts.filter(w => cats.includes(w.category)).slice(0, 3);
+  }, [sessionPlan, equipment, allWorkouts]);
 
   return (
     <div className="min-h-screen bg-sand pb-24 px-6 pt-8">
@@ -211,20 +225,23 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
 
           <div className="bg-navy text-white p-6 rounded-2xl shadow-lg mb-8 relative overflow-hidden">
             <div className="relative z-10">
-              <h2 className="font-serif text-xl mb-4 flex items-center gap-2">
-                🔥 Daily Insight
-              </h2>
+              <h2 className="font-serif text-xl mb-4 flex items-center gap-2">🔥 Daily Insight</h2>
               {tip ? (
                 <p className="font-sans text-lg leading-relaxed italic opacity-90">"{tip}"</p>
               ) : (
                 <div className="text-center py-4">
-                  <Button onClick={handleGetDailyTip} variant="ghost" className="text-white bg-white/20 hover:bg-white/30 border border-white/20" isLoading={loadingTip}>
+                  <Button
+                    onClick={handleGetDailyTip}
+                    variant="ghost"
+                    className="text-white bg-white/20 hover:bg-white/30 border border-white/20"
+                    isLoading={loadingTip}
+                  >
                     {loadingTip ? 'Connecting...' : "Reveal Today's Wisdom"}
                   </Button>
                 </div>
               )}
             </div>
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
+            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl" />
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-sm">
@@ -236,12 +253,19 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
               className="w-full p-3 rounded-lg bg-gray-50 border-none focus:ring-2 focus:ring-navy mb-4 text-sm"
               rows={3}
             />
-            <Button onClick={handleAskConcierge} fullWidth disabled={loadingConcierge}>
+            <Button onClick={handleAskConcierge} fullWidth disabled={loadingConcierge || !conciergeQuestion.trim()}>
               {loadingConcierge ? 'Thinking...' : 'Ask Coach'}
             </Button>
 
-            {conciergeAnswer && (
-              <div className="mt-6 p-4 bg-sand rounded-lg border border-navy/20">
+            {/* FIX 1 — skeleton loading while concierge responds */}
+            {loadingConcierge && (
+              <div className="mt-6 p-4 bg-sand rounded-lg border border-navy/10">
+                <SkeletonLines lines={3} />
+              </div>
+            )}
+
+            {conciergeAnswer && !loadingConcierge && (
+              <div className="mt-6 p-4 bg-sand rounded-lg border border-navy/20 animate-[fadeIn_0.4s_ease-out]">
                 <p className="text-sm text-charcoal leading-relaxed">{conciergeAnswer}</p>
               </div>
             )}
@@ -264,9 +288,7 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
                       key={item}
                       onClick={() => toggleSelection(item, equipment, setEquipment)}
                       className={`px-3 py-2 text-xs rounded-md border transition-all duration-200
-                        ${equipment.includes(item)
-                          ? 'bg-navy text-white border-navy shadow-md'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-navy/50'}`}
+                        ${equipment.includes(item) ? 'bg-navy text-white border-navy shadow-md' : 'bg-white text-gray-600 border-gray-200 hover:border-navy/50'}`}
                     >
                       {item}
                     </button>
@@ -282,9 +304,7 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
                       key={m}
                       onClick={() => setMood(m)}
                       className={`px-4 py-3 text-sm rounded-lg border text-left flex justify-between items-center transition-all duration-200
-                        ${mood === m
-                          ? 'bg-orange/10 border-orange text-navy-dark font-medium shadow-inner'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                        ${mood === m ? 'bg-orange/10 border-orange text-navy-dark font-medium shadow-inner' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
                     >
                       {m}
                       {mood === m && <span className="text-orange">●</span>}
@@ -301,9 +321,7 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
                       key={issue}
                       onClick={() => toggleSelection(issue, issues, setIssues)}
                       className={`px-3 py-1.5 text-xs rounded-full border transition-all duration-200
-                        ${issues.includes(issue)
-                          ? 'bg-red-50 text-red-800 border-red-200 font-medium'
-                          : 'bg-white text-gray-500 border-gray-200'}`}
+                        ${issues.includes(issue) ? 'bg-red-50 text-red-800 border-red-200 font-medium' : 'bg-white text-gray-500 border-gray-200'}`}
                     >
                       {issue}
                     </button>
@@ -319,30 +337,57 @@ export function AiCoachTab({ onPlayWorkout }: AiCoachTabProps = {}) {
               </section>
 
               <div className="pt-4">
-                <Button
-                  onClick={handleGeneratePlan}
-                  fullWidth
-                  size="lg"
-                  disabled={loadingPlan || equipment.length === 0 || !mood}
-                >
-                  {loadingPlan ? 'Generating Plan...' : 'Generate Session Plan'}
-                </Button>
+                {/* FIX 1 — skeleton while plan generates */}
+                {loadingPlan ? (
+                  <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                    <SkeletonLines lines={3} />
+                  </div>
+                ) : (
+                  <Button
+                    onClick={handleGeneratePlan}
+                    fullWidth
+                    size="lg"
+                    disabled={equipment.length === 0 || !mood}
+                  >
+                    Generate Session Plan
+                  </Button>
+                )}
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[fadeIn_0.5s_ease-out]">
-              <div className="bg-navy/5 border-b border-navy/10 p-4 flex justify-between items-center">
-                <h2 className="font-serif text-lg text-navy font-bold">Your Custom Session Plan</h2>
-                <button
-                  onClick={() => setSessionPlan(null)}
-                  className="text-xs text-gray-400 hover:text-navy transition-colors font-medium"
-                >
-                  Start Over
-                </button>
+            <div>
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-[fadeIn_0.5s_ease-out]">
+                <div className="bg-navy/5 border-b border-navy/10 p-4 flex justify-between items-center">
+                  <h2 className="font-serif text-lg text-navy font-bold">Your Custom Session Plan</h2>
+                  <button
+                    onClick={() => setSessionPlan(null)}
+                    className="text-xs text-gray-400 hover:text-navy transition-colors font-medium"
+                  >
+                    Start Over
+                  </button>
+                </div>
+                <div className="p-6 space-y-1">
+                  {renderPlanOutput(sessionPlan)}
+                </div>
               </div>
-              <div className="p-6 space-y-1">
-                {renderPlanOutput(sessionPlan)}
-              </div>
+
+              {/* FIX 4 — recommended workouts from The Labs */}
+              {recommendedWorkouts.length > 0 && (
+                <div className="mt-8 mb-10">
+                  <h2 className="font-serif text-base text-charcoal font-bold mb-4">Recommended from The Labs</h2>
+                  <div className="space-y-4">
+                    {recommendedWorkouts.map(workout => (
+                      <WorkoutCard
+                        key={workout.id}
+                        workout={workout}
+                        onClick={onPlayWorkout ?? (() => {})}
+                        featured
+                        showPeopleCount
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useListWorkouts } from '@workspace/api-client-react';
 import { WorkoutCard } from '../components/WorkoutCard';
 import { EmptyState } from '../components/EmptyState';
@@ -15,6 +15,21 @@ interface LabsTabProps {
 export function LabsTab({ onPlayWorkout }: LabsTabProps) {
   const [filterType, setFilterType] = useState<string>('All');
   const { userState, onboarding } = useUser();
+
+  /* FIX 5 — IntersectionObserver for sticky header elevation */
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [isStuck, setIsStuck] = useState(false);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsStuck(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, []);
 
   const { data: workouts = [], isLoading } = useListWorkouts(
     filterType === 'All' ? undefined : { category: filterType }
@@ -38,8 +53,15 @@ export function LabsTab({ onPlayWorkout }: LabsTabProps) {
   };
 
   return (
-    <div className="min-h-screen bg-sand pb-24 animate-[fadeSlideIn_0.2s_ease-out]">
-      <header className="px-6 pt-12 pb-4 bg-white sticky top-0 z-40 shadow-sm">
+    <div className="min-h-screen bg-sand pb-24" style={{ animation: 'fadeSlideIn 0.2s ease-out' }}>
+      {/* FIX 5 — sentinel div before sticky header for scroll detection */}
+      <div ref={sentinelRef} className="h-px" />
+
+      {/* FIX 5 — sticky header with elevation on scroll */}
+      <header
+        className={`px-6 pt-12 pb-4 sticky top-0 z-40 transition-all duration-200
+          ${isStuck ? 'shadow-sm bg-white/95 backdrop-blur-sm border-b border-gray-100' : 'bg-white'}`}
+      >
         <h1 className="font-serif text-3xl text-charcoal mb-1">The Labs</h1>
         <p className="text-gray-500 text-sm">Design your practice. Choose your equipment.</p>
 
@@ -62,11 +84,10 @@ export function LabsTab({ onPlayWorkout }: LabsTabProps) {
 
       <div className="px-6 py-6 grid gap-6">
         {isLoading ? (
-          <>
-            {[1, 2, 3].map(n => (
-              <div key={n} className="w-full aspect-[16/9] rounded-xl bg-gray-200 animate-pulse" />
-            ))}
-          </>
+          /* FIX 1 — skeleton loading cards */
+          [1, 2, 3, 4].map(n => (
+            <div key={n} className="h-[200px] rounded-xl bg-gray-200 animate-pulse mb-4" />
+          ))
         ) : workouts.length > 0 ? (
           workouts.map(workout => {
             const { locked, reason } = isWorkoutLocked(workout);
@@ -79,6 +100,7 @@ export function LabsTab({ onPlayWorkout }: LabsTabProps) {
                 locked={locked}
                 lockReason={reason}
                 showPeopleCount
+                completed={userState.completedWorkouts.includes(workout.id)}
               />
             );
           })

@@ -336,6 +336,7 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
 const DailyInsightCard: React.FC<{ recentFeelings: string[] }> = ({ recentFeelings }) => {
   const [tip, setTip] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -348,23 +349,31 @@ const DailyInsightCard: React.FC<{ recentFeelings: string[] }> = ({ recentFeelin
         if (res.ok) {
           const data = await res.json();
           setTip(data.text || '');
+        } else {
+          setError(true);
         }
-      } catch {}
+      } catch {
+        setError(true);
+      }
       setLoading(false);
     };
     load();
   }, []);
+
+  const FALLBACK = 'Movement is the medicine. Show up to your mat — the rest will follow.';
 
   return (
     <div className="bg-navy rounded-xl p-5">
       <p className="text-[10px] text-orange font-bold uppercase tracking-widest mb-3">Daily Insight</p>
       {loading ? (
         <div className="space-y-2">
-          <div className="h-3 bg-white/10 rounded animate-pulse" />
-          <div className="h-3 bg-white/10 rounded animate-pulse w-4/5" />
+          <div className="h-3 bg-white/10 rounded animate-pulse w-3/4" />
+          <div className="h-3 bg-white/10 rounded animate-pulse w-1/2 mt-2" />
         </div>
       ) : (
-        <p className="font-serif italic text-white/80 text-sm leading-relaxed">{tip || 'Take a moment to breathe and connect with your movement today.'}</p>
+        <p className="font-serif italic text-white/80 text-sm leading-relaxed">
+          {error || !tip ? FALLBACK : tip}
+        </p>
       )}
     </div>
   );
