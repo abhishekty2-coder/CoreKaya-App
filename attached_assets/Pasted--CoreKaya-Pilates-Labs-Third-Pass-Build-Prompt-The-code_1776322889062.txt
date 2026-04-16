@@ -1,0 +1,73 @@
+# CoreKaya Pilates Labs — Third Pass Build Prompt
+
+The codebase is fully built through two previous passes. Everything is working: gamification, XP, badges, onboarding, PostWorkoutRitual, BreathingInterstitial, ProfilePage, sticky Labs filter, AI Coach recommended workouts, skeleton loaders, tab animations, shield initialization, best streak calculation, and all API routes.
+
+There is exactly one remaining fix. Build only what is described below. Do not touch anything else.
+
+---
+
+## THE ONE FIX — Weekly Drop completion rings: use real per-day data
+
+**The problem:** In `HomeTab.tsx`, the weekly day ring SVG circle always uses `strokeDasharray="138.2 0"` — a hardcoded full circle. This means every completed day shows a full orange ring regardless of whether the user truly did that day's workout. The ring should only be full if the user completed a workout on that specific calendar day.
+
+**The data source:** `checkInHistory` is already available in `HomeTab.tsx` via `useUser()`. Each entry has a `checkedInAt` timestamp. Use this to determine which calendar dates the user actually worked out.
+
+**The fix — three parts:**
+
+**Part 1: Build a `workedOutDays` Set inside `HomeTab`.**
+
+At the top of the `HomeTab` function body, after `checkInHistory` is destructured from `useUser()`, add:
+
+```ts
+const workedOutDays = new Set(
+  checkInHistory.map(c =>
+    new Date(c.checkedInAt as unknown as string).toISOString().split('T')[0]
+  )
+);
+```
+
+**Part 2: Calculate each day's ISO date string in the DAYS map.**
+
+Inside the `DAYS.map((day, idx) => { ... })` block in the weekly row, compute the ISO date for that day index relative to the current week start. The schedule's `startDate` is already on the component as `schedule?.startDate`. Use it:
+
+```ts
+const dayIso = (() => {
+  if (!schedule?.startDate) return '';
+  const base = new Date(schedule.startDate);
+  base.setDate(base.getDate() + idx);
+  return base.toISOString().split('T')[0];
+})();
+
+const didWorkout = workedOutDays.has(dayIso);
+```
+
+**Part 3: Use `didWorkout` to control the ring.**
+
+Replace the existing SVG ring condition from:
+```tsx
+{isDone && hasWorkout && (
+  <svg ...>
+    <circle ... strokeDasharray="138.2 0" ... />
+  </svg>
+)}
+```
+
+With:
+```tsx
+{isDone && hasWorkout && (
+  <svg className="absolute -inset-1 w-[calc(100%+8px)] h-[calc(100%+8px)]" viewBox="0 0 48 48">
+    <circle
+      cx="24" cy="24" r="22"
+      fill="none"
+      stroke={didWorkout ? '#E8734A' : '#E5E7EB'}
+      strokeWidth="2.5"
+      strokeDasharray="138.2 0"
+      strokeLinecap="round"
+    />
+  </svg>
+)}
+```
+
+This renders an orange ring on days the user actually completed a workout, and a light gray ring on scheduled days they skipped. Rest days (no workout assigned in schedule) continue to show no ring at all, as before.
+
+That is the only change. Do not modify any other file.
