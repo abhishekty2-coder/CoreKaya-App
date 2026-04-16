@@ -70,6 +70,12 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
   const { data: allWorkouts = [], isLoading: workoutsLoading } = useListWorkouts();
   const { data: allProducts = [] } = useListProducts();
 
+  const workedOutDays = new Set(
+    checkInHistory.map(c =>
+      new Date(c.checkedInAt as unknown as string).toISOString().split('T')[0]
+    )
+  );
+
   const todayIndex = new Date().getDay() === 0 ? 6 : new Date().getDay() - 1;
 
   const dayWorkoutKeys = ['monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout', 'sunWorkout'] as const;
@@ -240,13 +246,27 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
             const isToday = idx === todayIndex;
             const isDone = idx < todayIndex;
             const hasWorkout = schedule ? !!schedule[dayWorkoutKeys[idx]] : false;
+            const dayIso = (() => {
+              if (!schedule?.startDate) return '';
+              const base = new Date(schedule.startDate);
+              base.setDate(base.getDate() + idx);
+              return base.toISOString().split('T')[0];
+            })();
+            const didWorkout = workedOutDays.has(dayIso);
             return (
               <div key={day} className="flex flex-col items-center min-w-[42px]">
                 <span className="text-[10px] font-bold text-gray-400 mb-2">{day}</span>
                 <div className="relative">
                   {isDone && hasWorkout && (
                     <svg className="absolute -inset-1 w-[calc(100%+8px)] h-[calc(100%+8px)]" viewBox="0 0 48 48">
-                      <circle cx="24" cy="24" r="22" fill="none" stroke="#E8734A" strokeWidth="2.5" strokeDasharray="138.2 0" strokeLinecap="round" />
+                      <circle
+                        cx="24" cy="24" r="22"
+                        fill="none"
+                        stroke={didWorkout ? '#E8734A' : '#E5E7EB'}
+                        strokeWidth="2.5"
+                        strokeDasharray="138.2 0"
+                        strokeLinecap="round"
+                      />
                     </svg>
                   )}
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all
