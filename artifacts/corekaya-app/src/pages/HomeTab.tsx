@@ -91,8 +91,14 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
   const showShield = userState.streak >= 5;
   const shieldRisk = !hasWorkedOutToday && hour >= 20;
 
-  const favoriteWorkoutsList = [...userState.favorites].reverse()
-    .map(id => allWorkouts.find(w => w.id === id)).filter(Boolean) as Workout[];
+  const favoriteWorkoutsList = [...userState.favorites]
+    .map(id => allWorkouts.find(w => w.id === id))
+    .filter(Boolean)
+    .sort((a, b) => {
+      const countA = checkInHistory.filter(c => c.workoutId === a!.id).length;
+      const countB = checkInHistory.filter(c => c.workoutId === b!.id).length;
+      return countB - countA;
+    }) as Workout[];
   const wishlistProductsList = userState.wishlist
     .map(id => allProducts.find(p => p.id === id)).filter(Boolean) as Product[];
 
@@ -139,6 +145,53 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
   };
 
   const getStartDateDisplay = () => schedule?.startDate ?? '';
+
+  const generateICS = () => {
+    if (!schedule?.startDate) return;
+
+    const workoutDays: { date: Date; title: string; instructor: string; duration: number }[] = [];
+
+    const dayKeys = ['monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout', 'sunWorkout'] as const;
+    dayKeys.forEach((key, idx) => {
+      const workout = schedule[key] as { title: string; instructor: string; durationMin: number } | null | undefined;
+      if (!workout) return;
+      const d = new Date(schedule.startDate);
+      d.setDate(d.getDate() + idx);
+      workoutDays.push({ date: d, title: workout.title, instructor: workout.instructor, duration: workout.durationMin });
+    });
+
+    if (workoutDays.length === 0) return;
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toICSDate = (d: Date) =>
+      `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T080000`;
+
+    const events = workoutDays.map(({ date, title, instructor, duration }) => [
+      'BEGIN:VEVENT',
+      `DTSTART:${toICSDate(date)}`,
+      `DTEND:${toICSDate(date).replace('T080000', `T${pad(8 + Math.floor(duration / 60))}${pad(duration % 60)}00`)}`,
+      `SUMMARY:CoreKaya — ${title}`,
+      `DESCRIPTION:Instructor: ${instructor}\\nDuration: ${duration} min`,
+      'END:VEVENT',
+    ].join('\r\n'));
+
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//CoreKaya Pilates Labs//EN',
+      'CALSCALE:GREGORIAN',
+      ...events,
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'corekaya-week.ics';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="min-h-screen bg-sand pb-24 animate-[fadeSlideIn_0.2s_ease-out]">
@@ -270,12 +323,29 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
                     </svg>
                   )}
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all
-                    ${isToday ? 'bg-navy text-white border-navy shadow-lg scale-110' :
-                      isDone ? 'bg-navy/10 text-navy border-transparent' :
-                      hasWorkout ? 'bg-white border-gray-200 text-gray-400' : 'bg-sand border-gray-100 text-gray-300'}`}>
-                    {isDone ? '✓' : !hasWorkout && !isToday ? (
+                    ${isToday
+                      ? 'bg-navy text-white border-navy shadow-lg scale-110'
+                      : isDone && didWorkout
+                      ? 'bg-orange/10 border-transparent'
+                      : isDone && hasWorkout && !didWorkout
+                      ? 'bg-red-50 border-transparent'
+                      : isDone
+                      ? 'bg-gray-50 border-transparent'
+                      : hasWorkout
+                      ? 'bg-white border-gray-200 text-gray-400'
+                      : 'bg-sand border-gray-100 text-gray-300'
+                    }`}>
+                    {isDone && didWorkout ? (
+                      <span className="text-orange font-bold text-sm">✓</span>
+                    ) : isDone && hasWorkout && !didWorkout ? (
+                      <span className="text-red-400 font-bold text-sm">×</span>
+                    ) : isDone && !hasWorkout ? (
+                      <span className="text-[9px] text-gray-300">—</span>
+                    ) : !hasWorkout && !isToday ? (
                       <span className="text-[9px] text-gray-300">Rest</span>
-                    ) : <span className="text-sm font-medium">{idx + 1}</span>}
+                    ) : (
+                      <span className="text-sm font-medium">{idx + 1}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -299,7 +369,7 @@ export function HomeTab({ onPlayWorkout, onBrowseLabs }: HomeTabProps) {
         </div>
 
         <div className="px-6 mt-4">
-          <Button variant="outline" fullWidth size="sm" className="gap-2">
+          <Button variant="outline" fullWidth size="sm" className="gap-2" onClick={generateICS}>
             {ICONS.CALENDAR} Add Schedule to Calendar
           </Button>
         </div>

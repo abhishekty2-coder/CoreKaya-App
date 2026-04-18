@@ -1,0 +1,166 @@
+# CoreKaya — Three Targeted Fixes
+
+Only modify `artifacts/corekaya-app/src/pages/HomeTab.tsx`. Do not touch any other file. Make exactly three changes described below. Do not refactor anything else in the file.
+
+---
+
+## FIX 1 — Missed day indicator in the weekly ring row
+
+**The problem:** Days that are past, had a scheduled workout, but the user did NOT complete them currently show a gray ring and a ✓ checkmark. The checkmark is wrong — a ✓ implies success. A skipped day should look visually distinct from a completed day.
+
+**Where it is:** Inside the `DAYS.map((day, idx) => { ... })` block, around line 246–283.
+
+**The variables already available per iteration:**
+- `isDone` — true if `idx < todayIndex` (day has passed)
+- `hasWorkout` — true if the schedule has a workout assigned for this day
+- `didWorkout` — true if `workedOutDays.has(dayIso)` (user actually completed it)
+
+**The fix — three sub-changes:**
+
+**Sub-change 1a: The ring SVG stroke.**
+Already correct from the last pass — orange when `didWorkout`, gray when not. Leave this unchanged.
+
+**Sub-change 1b: The inner dot background and icon.**
+Replace the current single condition `{isDone ? '✓' : ...}` with a three-way condition:
+
+```tsx
+{isDone && didWorkout ? (
+  // Completed: navy tint background, orange checkmark
+  <span className="text-orange font-bold text-sm">✓</span>
+) : isDone && hasWorkout && !didWorkout ? (
+  // Missed: light red background, × mark
+  <span className="text-red-400 font-bold text-sm">×</span>
+) : isDone && !hasWorkout ? (
+  // Rest day passed: moon emoji small
+  <span className="text-[9px] text-gray-300">—</span>
+) : !hasWorkout && !isToday ? (
+  // Future rest day
+  <span className="text-[9px] text-gray-300">Rest</span>
+) : (
+  // Future workout day or today
+  <span className="text-sm font-medium">{idx + 1}</span>
+)}
+```
+
+**Sub-change 1c: The dot background className.**
+Replace the current className string on the inner `<div>` with this four-way logic:
+
+```tsx
+className={`w-10 h-10 rounded-full flex items-center justify-center border transition-all
+  ${isToday
+    ? 'bg-navy text-white border-navy shadow-lg scale-110'
+    : isDone && didWorkout
+    ? 'bg-orange/10 border-transparent'
+    : isDone && hasWorkout && !didWorkout
+    ? 'bg-red-50 border-transparent'
+    : isDone
+    ? 'bg-gray-50 border-transparent'
+    : hasWorkout
+    ? 'bg-white border-gray-200 text-gray-400'
+    : 'bg-sand border-gray-100 text-gray-300'
+  }`}
+```
+
+Result: completed days = orange-tinted dot with orange ✓, missed workout days = light red dot with gray ×, past rest days = plain gray dot with —, future days unchanged.
+
+---
+
+## FIX 2 — Sort Favorite Classes by completion count
+
+**The problem:** Line 94 reads:
+```ts
+const favoriteWorkoutsList = [...userState.favorites].reverse()
+  .map(id => allWorkouts.find(w => w.id === id))
+  .filter(Boolean) as Workout[];
+```
+This sorts by most-recently-favorited, which is arbitrary. The user's most-practiced workouts should appear first.
+
+**The fix:** Replace that block with a sort that counts how many times each workout appears in `checkInHistory`, then sorts descending by that count:
+
+```ts
+const favoriteWorkoutsList = [...userState.favorites]
+  .map(id => allWorkouts.find(w => w.id === id))
+  .filter(Boolean)
+  .sort((a, b) => {
+    const countA = checkInHistory.filter(c => c.workoutId === a!.id).length;
+    const countB = checkInHistory.filter(c => c.workoutId === b!.id).length;
+    return countB - countA;
+  }) as Workout[];
+```
+
+`checkInHistory` is already destructured from `useUser()` at line 58. No new imports needed.
+
+---
+
+## FIX 3 — Real calendar export from the "Add Schedule to Calendar" button
+
+**The problem:** The button at line 303 renders:
+```tsx
+<Button variant="outline" fullWidth size="sm" className="gap-2">
+  {ICONS.CALENDAR} Add Schedule to Calendar
+</Button>
+```
+It has no `onClick` and does nothing.
+
+**The fix — two sub-changes:**
+
+**Sub-change 3a: Add a `generateICS` function** at the top of the `HomeTab` function body, after the existing variable declarations. This function builds an ICS file from the current week's schedule and triggers a download:
+
+```ts
+const generateICS = () => {
+  if (!schedule?.startDate) return;
+
+  const workoutDays: { date: Date; title: string; instructor: string; duration: number }[] = [];
+
+  const dayKeys = ['monWorkout', 'tueWorkout', 'wedWorkout', 'thuWorkout', 'friWorkout', 'satWorkout', 'sunWorkout'] as const;
+  dayKeys.forEach((key, idx) => {
+    const workout = schedule[key] as { title: string; instructor: string; durationMin: number } | null | undefined;
+    if (!workout) return;
+    const d = new Date(schedule.startDate);
+    d.setDate(d.getDate() + idx);
+    workoutDays.push({ date: d, title: workout.title, instructor: workout.instructor, duration: workout.durationMin });
+  });
+
+  if (workoutDays.length === 0) return;
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const toICSDate = (d: Date) =>
+    `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T080000`;
+
+  const events = workoutDays.map(({ date, title, instructor, duration }) => [
+    'BEGIN:VEVENT',
+    `DTSTART:${toICSDate(date)}`,
+    `DTEND:${toICSDate(date).replace('T080000', `T${pad(8 + Math.floor(duration / 60))}${pad(duration % 60)}00`)}`,
+    `SUMMARY:CoreKaya — ${title}`,
+    `DESCRIPTION:Instructor: ${instructor}\\nDuration: ${duration} min`,
+    'END:VEVENT',
+  ].join('\r\n'));
+
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//CoreKaya Pilates Labs//EN',
+    'CALSCALE:GREGORIAN',
+    ...events,
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'corekaya-week.ics';
+  a.click();
+  URL.revokeObjectURL(url);
+};
+```
+
+**Sub-change 3b: Wire `onClick` to the button:**
+
+```tsx
+<Button variant="outline" fullWidth size="sm" className="gap-2" onClick={generateICS}>
+  {ICONS.CALENDAR} Add Schedule to Calendar
+</Button>
+```
+
+Result: tapping the button downloads a `.ics` file with one calendar event per scheduled workout this week, each set to 8:00 AM on its respective day with the correct duration, title, and instructor in the description. The file opens in Apple Calendar, Google Calendar, and Outlook.
